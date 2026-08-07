@@ -1,0 +1,8 @@
+{
+  "version": "1.4",
+  "policy": {
+    "allow_dynamic_gov_sa": true,
+    "drafts_never_effective": true,
+    "require_effective_rule_for_applicability": true
+  }
+}

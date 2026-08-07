@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>الراصد التشريعي</title>
+<style>
+:root{--g:#07a869;--b:#3d7eb9;--t:#0da9a6;--n:#15445a;--gold:#c1b489;--gray:#c2c1c1;--bg:#f6faf9}
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:var(--bg);color:var(--n)}
+.hero{position:relative;overflow:hidden;background:#fff;padding:54px 7vw 34px;border-bottom:1px solid #e6efec}
+.hero:before,.hero:after{content:"";position:absolute;border-radius:50%;filter:blur(.1px)}
+.hero:before{width:430px;height:170px;left:-80px;top:-95px;background:linear-gradient(120deg,#0da9a622,#3d7eb922)}
+.hero:after{width:390px;height:120px;right:-80px;bottom:-85px;background:linear-gradient(120deg,#07a86918,#c1b48925)}
+.brand{display:flex;gap:13px;align-items:center;position:relative}.logo{width:54px;height:54px;border-radius:18px;background:linear-gradient(135deg,var(--g),var(--t));display:grid;place-items:center;color:#fff;font-size:26px;box-shadow:0 8px 25px #07a8692b}
+h1{margin:0;font-size:34px}.eyebrow{font-size:13px;color:#67808a;margin-bottom:5px}.lead{max-width:830px;line-height:1.9;color:#4f6973;margin:18px 0 0}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 22px 60px}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+.tab{border:1px solid #dce9e5;background:#fff;border-radius:18px;padding:17px;text-align:right;cursor:pointer;transition:.2s;color:var(--n)}
+.tab:hover,.tab.active{transform:translateY(-2px);border-color:#0da9a6;box-shadow:0 10px 25px #15445a10}.tab strong{display:block;font-size:17px}.tab span{display:block;font-size:12px;color:#6f858d;margin-top:6px}
+.panel{display:none}.panel.active{display:block}.card{background:#fff;border:1px solid #e3ece9;border-radius:22px;padding:24px;box-shadow:0 8px 26px #15445a0b}
+h2{margin:0 0 7px;font-size:24px}.hint{color:#6d828a;line-height:1.8;margin:0 0 18px}
+textarea,input,select{width:100%;border:1px solid #ccdcd7;border-radius:14px;padding:13px 14px;font:inherit;background:#fff;color:var(--n);outline:none}
+textarea{min-height:145px;resize:vertical;line-height:1.8}textarea:focus,input:focus,select:focus{border-color:var(--t);box-shadow:0 0 0 3px #0da9a612}
+.actions{display:flex;gap:10px;align-items:center;margin-top:13px;flex-wrap:wrap}.btn{border:0;border-radius:13px;padding:12px 18px;font-weight:700;cursor:pointer}.primary{background:linear-gradient(135deg,var(--g),var(--t));color:#fff}.secondary{background:#eef7f4;color:var(--n)}
+.examples{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:17px}.example{border:1px dashed #bfd6cf;border-radius:14px;padding:12px;background:#fbfdfc;cursor:pointer;color:#45636d;line-height:1.6;font-size:13px}
+.filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:11px}.result{margin-top:18px;padding:17px;border-radius:16px;background:#f8fbfa;border-right:5px solid var(--t);display:none}.result.show{display:block}.badge{display:inline-block;border-radius:999px;padding:6px 10px;background:#07a86916;color:#087b4e;font-size:12px;font-weight:700}
+.notice{margin-top:20px;border-radius:18px;padding:15px 17px;background:#c1b4891b;border:1px solid #c1b48955;color:#665b39;line-height:1.8}
+.source-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:22px}.source{background:#fff;border:1px solid #e3ece9;border-radius:13px;padding:11px;text-align:center;font-size:12px;color:#5e747c}
+.footer{text-align:center;color:#789099;font-size:12px;padding:24px}
+@media(max-width:760px){h1{font-size:28px}.tabs,.examples,.source-strip{grid-template-columns:1fr}.filters{grid-template-columns:1fr}.hero{padding:38px 22px 27px}.wrap{padding:20px 14px 40px}}
+@media print{.tabs,.actions,.examples,.footer{display:none}.hero{padding:25px}.wrap{padding:15px}.card{box-shadow:none}}
+</style>
+</head>
+<body>
+<header class="hero">
+ <div class="brand"><div class="logo">⚖</div><div><div class="eyebrow">دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية</div><h1>الراصد التشريعي</h1></div></div>
+ <p class="lead">اسأل، واستعرض ما تغيّر، وتحقّق من النص النظامي الذي كان ساريًا وقت معاملتك.</p>
+</header>
+<main class="wrap">
+ <nav class="tabs">
+  <button class="tab active" data-target="ask"><strong>🔎 اسأل الراصد</strong><span>صف معاملتك أو سؤالك وسنبحث عن التشريع والمواد ذات الصلة.</span></button>
+  <button class="tab" data-target="changes"><strong>🔔 ما الذي تغير؟</strong><span>استعرض أحدث تعديلات الأنظمة واللوائح والمواد.</span></button>
+  <button class="tab" data-target="history"><strong>⏳ تحقق من نص سابق</strong><span>لمن يعرف التشريع أو المادة ويريد فحص السريان الزمني.</span></button>
+ </nav>
+
+ <section id="ask" class="panel active card">
+  <h2>ما الذي تريد معرفته؟</h2>
+  <p class="hint">لا تبحث عن رقم المادة بنفسك. اكتب الحالة كما تفكر فيها، وسيحدد الراصد التشريعات والمواد المحتملة ثم يفحص تحديثاتها وسريانها.</p>
+  <textarea id="question" placeholder="مثال: لدي عقد مشتريات يتضمن اشتراطات للمحتوى المحلي، وأريد معرفة المواد التي تنطبق على حالتي وهل تغيرت مؤخرًا؟"></textarea>
+  <div class="actions"><button class="btn primary" onclick="askAgent()">بحث وتحليل</button><button class="btn secondary" onclick="document.getElementById('question').value=''">مسح</button></div>
+  <div class="examples">
+   <div class="example" onclick="fill(this)">ما المواد التي جرى تعديلها في لائحة تفضيل المحتوى المحلي؟</div>
+   <div class="example" onclick="fill(this)">لدي عقد توريد حكومي يتضمن متطلبات للمحتوى المحلي. ما المواد المحتملة الصلة وهل تغير حكمها؟</div>
+   <div class="example" onclick="fill(this)">ما آخر التعديلات على الضوابط الصادرة عن الهيئة الوطنية للأمن السيبراني؟</div>
+   <div class="example" onclick="fill(this)">لدي معاملة تمت في مايو 2025. كيف أعرف النص النظامي الذي كان نافذًا وقتها؟</div>
+  </div>
+  <div id="askResult" class="result"></div>
+ </section>
+
+ <section id="changes" class="panel card">
+  <h2>ما الذي تغير؟</h2>
+  <p class="hint">ابحث في جميع الأنظمة واللوائح، أو حدّد مصدرًا أساسيًا أو موضوعًا وفترة زمنية. خيار «جميع الجهات» يوسّع البحث إلى جميع الجهات الحكومية السعودية الرسمية، ولا يقتصر على القائمة الظاهرة.</p>
+  <div class="filters"><input id="changeQuery" placeholder="اسم النظام، اللائحة، الموضوع أو الجهة"><select id="authorityFilter">
+<option>جميع الجهات</option>
+<option>هيئة الخبراء بمجلس الوزراء</option>
+<option>المركز الوطني للوثائق والمحفوظات</option>
+<option>الديوان العام للمحاسبة</option>
+<option>وزارة المالية</option>
+<option>وزارة الموارد البشرية والتنمية الاجتماعية</option>
+<option>هيئة المحتوى المحلي والمشتريات الحكومية</option>
+<option>هيئة كفاءة الإنفاق والمشروعات الحكومية</option>
+<option>هيئة الحكومة الرقمية</option>
+<option>الهيئة الوطنية للأمن السيبراني</option>
+<option>الهيئة السعودية للبيانات والذكاء الاصطناعي (سدايا)</option>
+</select><select><option>آخر 30 يومًا</option><option>آخر 7 أيام</option><option>هذا العام</option><option>فترة مخصصة</option></select></div>
+  <div class="actions"><button class="btn primary" onclick="demoResult('changeResult','سيعرض هنا سجل التعديلات المكتشفة من المصادر الرسمية بعد اتصال الـBackend المنشور.')">عرض التحديثات</button></div>
+  <div id="changeResult" class="result"></div>
+ </section>
+
+ <section id="history" class="panel card">
+  <h2>تحقق من النص النافذ في تاريخ معين</h2>
+  <p class="hint">هذا المسار اختياري للمستخدم الذي يعرف التشريع أو المادة. إذا لم تعرف المادة استخدم «اسأل الراصد».</p>
+  <div class="filters"><input placeholder="اسم النظام أو اللائحة"><input placeholder="رقم المادة – اختياري"><input type="date"></div>
+  <div class="actions"><button class="btn primary" onclick="demoResult('historyResult','سيعرض هنا النص المرشح للانطباق، تاريخ بدء وانتهاء النفاذ، القرار، والحكم الانتقالي مع المصدر الرسمي.')">تحقق من السريان</button></div>
+  <div id="historyResult" class="result"></div>
+ </section>
+
+ <div class="notice"><strong>قاعدة الموثوقية:</strong> لا يعتبر الراصد مشروع نظام أو مشروع لائحة منشورًا للاستطلاع نصًا نافذًا، ولا يحكم على معاملة إذا لم يثبت تاريخ النفاذ أو كان هناك حكم انتقالي يحتاج إلى تحقق.</div>
+ <div class="source-strip"><div class="source">أم القرى</div><div class="source">هيئة الخبراء</div><div class="source">الوثائق والمحفوظات</div><div class="source">الجهات الحكومية المختصة</div></div>
+</main>
+<footer class="footer">الراصد التشريعي — أداة مساندة للتحقق من التحديثات والسريان الزمني بالرجوع إلى المصادر الرسمية.</footer>
+<script src="config.js"></script>
+<script>
+const API_BASE = (window.REGULATORY_API_BASE || localStorage.getItem('regulatory_api_base') || '').replace(/\/$/,'');
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab,.panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.getElementById(b.dataset.target).classList.add('active')});
+function fill(el){document.getElementById('question').value=el.innerText;document.getElementById('question').focus()}
+function demoResult(id,msg){const x=document.getElementById(id);x.classList.add('show');x.innerHTML='<span class="badge">جاهز للربط الحي</span><p>'+msg+'</p>'}
+async function askAgent(){
+ const q=document.getElementById('question').value.trim(), out=document.getElementById('askResult');
+ out.classList.add('show');
+ if(!q){out.innerHTML='اكتب سؤالك أو صف معاملتك أولًا.';return}
+ if(!API_BASE){out.innerHTML='<span class="badge">واجهة v1.2</span><p><strong>تم فهم نقطة الدخول الجديدة.</strong> عند نشر الـBackend سيُرسل هذا السؤال إلى محرك البحث التشريعي بدل طلب رقم المادة من المستخدم.</p><p>السؤال: '+q.replace(/[<>]/g,'')+'</p>';return}
+ try{
+   const r=await fetch(API_BASE.replace(/\/$/,'')+'/api/v1/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+   const data=await r.json();
+   const f=(data.formatted_answer&&data.formatted_answer.findings)||data.candidates||[];
+   if(!f.length){out.innerHTML='<span class="badge">جارٍ التحقق</span><p>'+(data.summary||'لم تظهر نتائج موثقة كافية بعد. سيستكمل الراصد البحث في المصادر الرسمية.')+'</p>';return}
+   out.innerHTML='<span class="badge">نتائج محتملة الصلة</span><p>'+(data.summary||'')+'</p>'+
+   f.map(x=>'<div class="card" style="margin-top:10px"><strong>'+(x.instrument||x.title||'وثيقة نظامية')+
+   (x.article_number?' — المادة ('+x.article_number+')':'')+'</strong><p class="text">'+(x.text_excerpt||x.text||'')+
+   '</p><div class="label">الجهة: '+(x.authority||'—')+' | القرار: '+(x.decision_number||'—')+
+   ' | بدء النفاذ: '+(x.effective_from||'—')+'</div>'+
+   (x.source_url?'<div class="source" style="margin-top:7px">'+x.source_url+'</div>':'')+'</div>').join('');
+ }catch(e){out.innerHTML='تعذر الاتصال بخدمة الراصد المنشورة. تحقق من إعداد عنوان الـAPI.'}
+}
+</script>
+</body></html>
