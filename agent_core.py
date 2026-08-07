@@ -10,8 +10,8 @@ def ask(question:str):
     docs=all_documents()
     candidates=rank_documents(question,docs)
     shaped=answer_shape(question,candidates)
-    formatted=format_agent_answer(question,plan["analysis"],candidates)\n    return {"question":question,"understanding":plan["analysis"],"search_plan":plan["plan"],**shaped,"formatted_answer":formatted}
-
+    formatted=format_agent_answer(question,plan["analysis"],candidates)
+    return {"question":question,"understanding":plan["analysis"],"search_plan":plan["plan"],**shaped,"formatted_answer":formatted}
 def changed(instrument_or_topic:str="", limit:int=50):
     docs=all_documents()
     if instrument_or_topic:
