@@ -9,9 +9,9 @@ def status():
     return {"status":"ready","message":"موصلات الرصد الحي جاهزة للتشغيل على الخادم المنشور."}
 
 @router.post("/monitor/run")
-def run_monitor(authorization:str|None=Header(default=None)):
+def run_monitor(authorization: str | None = Header(default=None, alias="Authorization")):
     expected=os.getenv("MONITOR_TOKEN","")
-    if expected:
+ 
         supplied=(authorization or "").removeprefix("Bearer ").strip()
         if not secrets.compare_digest(supplied,expected):
             raise HTTPException(status_code=401,detail="Unauthorized")
