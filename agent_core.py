@@ -20,7 +20,7 @@ def _live_search(question):
             try:
                result = scan_root(root, question)
 
-                for candidate in result.get("candidates", []):
+            for candidate in result.get("candidates", []):
                     findings.append({
                         "source_url": candidate.get("url") or candidate.get("href"),
                         "authority": connector.authority,
