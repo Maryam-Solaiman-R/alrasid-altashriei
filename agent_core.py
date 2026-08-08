@@ -8,7 +8,7 @@ from live_connectors import CONNECTORS
 from live_fetcher import scan_root
 
 
-def _live_search():
+def _live_search(question):
     """
     Search the configured official Saudi sources and return
     newly discovered official candidates.
@@ -18,7 +18,7 @@ def _live_search():
     for connector in sorted(CONNECTORS, key=lambda x: x.priority):
         for root in connector.roots:
             try:
-                result = scan_root(root)
+               result = scan_root(root, question)
 
                 for candidate in result.get("candidates", []):
                     findings.append({
@@ -53,7 +53,7 @@ def ask(question: str):
 
     # 2. If local index has no useful result, perform live discovery
     if not candidates:
-        live_docs = _live_search()
+        live_docs = _live_search(question)
 
         # Store discovered official candidates in the local index
         for doc in live_docs:
