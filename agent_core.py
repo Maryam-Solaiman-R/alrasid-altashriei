@@ -91,7 +91,7 @@ def ask(question: str):
                 for item in result.get("candidates", [])[:6]:
                     discovered.append((item, connector.authority))
             except Exception as exc:
-                errors.append({"authority": connector.authority, "error": type(exc).__name__})
+                errors.append({"authority": connector.authority, "error": f"{type(exc).__name__}: {str(exc)[:220]}"})
 
     # فحص أفضل النتائج فقط؛ الهدف السرعة والدقة لا الزحف الشامل.
     findings = []
