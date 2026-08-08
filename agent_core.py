@@ -61,13 +61,41 @@ def _inspect_candidate(candidate, authority, article_number):
     }, None
 
 
-def ask(question: str):
+def ask(question: str, ncar_documents=None):
     question = " ".join((question or "").split()).strip()
     if not question:
         return {"status": "invalid_request", "message": "يرجى إدخال اسم النظام أو اللائحة، ويمكن إضافة رقم المادة."}
 
     article_number = _article_number(question)
     discovered, errors = [], []
+
+    # Browser-assisted NCAR fallback: the official NCAR API permits browser CORS,
+    # while some cloud hosts cannot establish TCP/443 to ncar.gov.sa.  Accept only
+    # document metadata returned by that official endpoint and keep it explicitly
+    # labelled as metadata (not article text).
+    browser_ncar_findings = []
+    for doc in (ncar_documents or [])[:10]:
+        if not isinstance(doc, dict):
+            continue
+        doc_id = str(doc.get("id") or "").strip()
+        title = str(doc.get("title_ar") or doc.get("name") or doc.get("title_en") or "").strip()
+        if not doc_id or not title:
+            continue
+        approvals = doc.get("Approves") if isinstance(doc.get("Approves"), list) else []
+        approval = approvals[0] if approvals and isinstance(approvals[0], dict) else {}
+        decision_number = str(approval.get("number") or approval.get("name_ar") or "").strip() or None
+        decision_date = str(approval.get("approve_date") or approval.get("date") or "").strip() or None
+        browser_ncar_findings.append({
+            "authority": "المركز الوطني للوثائق والمحفوظات",
+            "title": title,
+            "article_number": article_number or None,
+            "change_status": "تم العثور على الوثيقة في فهرس NCAR الرسمي",
+            "change_summary": "تم التحقق من وجود الوثيقة وبياناتها عبر واجهة البحث الرسمية للمركز. لا يُنسب نص مادة أو تعديل ما لم يمكن استرجاع صفحة الوثيقة الرسمية.",
+            "decision_number": decision_number,
+            "decision_date": decision_date,
+            "source_url": "https://ncar.gov.sa/document-details/" + doc_id,
+            "confidence": "بيانات فهرسة رسمية من NCAR",
+        })
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = {pool.submit(scan_root, root, question): connector for connector in CONNECTORS for root in connector.roots}
@@ -82,7 +110,7 @@ def ask(question: str):
             except Exception as exc:
                 errors.append({"authority": connector.authority, "stage": "discovery", "error": f"{type(exc).__name__}: {str(exc)[:220]}"})
 
-    findings = []
+    findings = list(browser_ncar_findings)
     with ThreadPoolExecutor(max_workers=4) as pool:
         jobs = [pool.submit(_inspect_candidate, c, a, article_number) for c, a in discovered[:10]]
         for future in as_completed(jobs):

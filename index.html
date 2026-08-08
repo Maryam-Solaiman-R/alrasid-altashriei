@@ -47,7 +47,19 @@ async function runSearch(){
  btn.disabled=true;btn.innerHTML='<span class="loading"></span> جارٍ التحقق';out.innerHTML='<div class="status"><span class="loading"></span> جارٍ البحث في المصدرين الرسميين...</div>';
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
  try{
-  const r=await fetch(API_BASE+'/api/v1/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question}),signal:controller.signal});
+  // NCAR browser fallback: the user's browser can reach the official API even when
+  // the Render host is blocked/timed out. Only official NCAR JSON is forwarded.
+  let ncar_documents=[];
+  try{
+   const ncarPayload={approveTool_id:null,documentCategory_id:null,name:instrument,ApproveDate:null,approveDate_from:null,approveDate_to:null,omAlQourah_version:null,omAlQourah_date:null,is_valid:null,is_printed:null,is_translated:null,generalCategory_id:[],particularCategory_id:[],governmentalAgency_id:null,governmentalAgency_childId:null,alphabeticalTopic_id:null,alphabeticalCategory_id:null,alphabeticalSubCategory_id:[],releaseOrgId:null,identical:1,number:null,PublishingStatus:null};
+   const nr=await fetch('https://ncar.gov.sa/api/index.php/api/documents/document-search/1/10/approveDate/DESC',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(ncarPayload),signal:controller.signal});
+   if(nr.ok){
+    const nd=await nr.json(),seen=new Set();
+    const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.id&&(v.title_ar||v.title_en||v.name)&&!seen.has(String(v.id))){seen.add(String(v.id));ncar_documents.push(v)}Object.values(v).forEach(walk)}};
+    walk(nd); ncar_documents=ncar_documents.slice(0,10);
+   }
+  }catch(_e){}
+  const r=await fetch(API_BASE+'/api/v1/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,ncar_documents}),signal:controller.signal});
   const data=await r.json();
   if(!r.ok)throw new Error('HTTP '+r.status);
   const f=data.findings||[];
