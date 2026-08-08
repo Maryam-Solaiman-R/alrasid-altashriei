@@ -11,8 +11,7 @@ def status():
 @router.post("/monitor/run")
 def run_monitor(authorization: str | None = Header(default=None, alias="Authorization")):
     expected=os.getenv("MONITOR_TOKEN","")
- 
-        supplied=(authorization or "").removeprefix("Bearer ").strip()
-        if not secrets.compare_digest(supplied,expected):
-            raise HTTPException(status_code=401,detail="Unauthorized")
+    supplied=(authorization or "").removeprefix("Bearer ").strip()
+    if not secrets.compare_digest(supplied,expected):
+        raise HTTPException(status_code=401,detail="Unauthorized")
     return scan_all()
