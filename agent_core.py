@@ -18,9 +18,9 @@ def _live_search(question):
     for connector in sorted(CONNECTORS, key=lambda x: x.priority):
         for root in connector.roots:
             try:
-               result = scan_root(root, question)
+                result = scan_root(root, question)
 
-            for candidate in result.get("candidates", []):
+                for candidate in result.get("candidates", []):
                     findings.append({
                         "source_url": candidate.get("url") or candidate.get("href"),
                         "authority": connector.authority,
@@ -42,7 +42,6 @@ def _live_search(question):
                 continue
 
     return findings
-
 
 def ask(question: str):
     plan = build_search_plan(question)
