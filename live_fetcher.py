@@ -84,6 +84,90 @@ def _search_engine_candidates(query: str, host: str):
     return found, errors
 
 
+
+
+def _ncar_search_api(query: str):
+    """Search NCAR using the same public JSON endpoint used by ncar.gov.sa.
+
+    The endpoint was captured from the official site's own search page.  Keep the
+    payload deliberately narrow: only the document name is supplied; all other
+    filters remain unset, matching the website request.
+    """
+    endpoint = "https://ncar.gov.sa/api/index.php/api/documents/document-search/1/10/approveDate/DESC"
+    payload = {
+        "approveTool_id": None,
+        "documentCategory_id": None,
+        "name": query,
+        "ApproveDate": None,
+        "approveDate_from": None,
+        "approveDate_to": None,
+        "omAlQourah_version": None,
+        "omAlQourah_date": None,
+        "is_valid": None,
+        "is_printed": None,
+        "is_translated": None,
+        "generalCategory_id": [],
+        "particularCategory_id": [],
+        "governmentalAgency_id": None,
+        "governmentalAgency_childId": None,
+        "alphabeticalTopic_id": None,
+        "alphabeticalCategory_id": None,
+        "alphabeticalSubCategory_id": [],
+        "releaseOrgId": None,
+        "identical": 1,
+        "number": None,
+        "PublishingStatus": None,
+    }
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+        "Origin": "https://ncar.gov.sa",
+        "Referer": "https://ncar.gov.sa/",
+        "Accept-Language": "ar-SA,ar;q=0.9,en;q=0.6",
+    }
+    r = requests.post(endpoint, json=payload, headers=headers, timeout=(5, 15))
+    r.raise_for_status()
+    data = r.json()
+
+    # NCAR has changed envelope names over time. Walk the JSON and collect
+    # document-shaped objects instead of binding the connector to one envelope.
+    docs = []
+    seen_obj = set()
+    def walk(value):
+        if isinstance(value, dict):
+            oid = id(value)
+            if oid in seen_obj:
+                return
+            seen_obj.add(oid)
+            if value.get("id") and (value.get("title_ar") or value.get("title_en") or value.get("name")):
+                docs.append(value)
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+    walk(data)
+
+    out, seen = [], set()
+    for doc in docs:
+        doc_id = str(doc.get("id") or "").strip()
+        if not doc_id or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        title = str(doc.get("title_ar") or doc.get("name") or doc.get("title_en") or "وثيقة رسمية").strip()
+        url = "https://ncar.gov.sa/document-details/" + doc_id
+        out.append({
+            "url": url,
+            "label": title,
+            "snippet": "",
+            "score": round(max(_score(query, title, url), 0.55), 3),
+            "discovery": "ncar_official_api",
+            "ncar_id": doc_id,
+        })
+    return out
+
+
 def _direct_discovery_urls(root: str, query: str):
     host = (urlparse(root).hostname or "").lower()
     if host.endswith("laws.boe.gov.sa"):
@@ -98,7 +182,16 @@ def scan_root(root: str, query: str):
     host = (urlparse(root).hostname or "").lower()
     ranked, hashes, errors = [], [], []
 
-    # First try the official site directly.
+    # NCAR is a JavaScript application. Use its official JSON search API first
+    # instead of scraping the home page. This mirrors the request made by the
+    # official website itself and is substantially more reliable.
+    if host.endswith("ncar.gov.sa"):
+        try:
+            ranked.extend(_ncar_search_api(query))
+        except Exception as exc:
+            errors.append(f"ncar_api:{type(exc).__name__}: {str(exc)[:180]}")
+
+    # For BOE, and as a secondary NCAR fallback, try the official site directly.
     for start_url in _direct_discovery_urls(root, query):
         try:
             got = fetch(start_url)

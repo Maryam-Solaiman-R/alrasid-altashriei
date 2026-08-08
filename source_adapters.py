@@ -78,7 +78,7 @@ class MOFAdapter(BaseAdapter):
 class GCAAdapter(BaseAdapter):
     name="الديوان العام للمحاسبة"; domains=("gca.gov.sa",)
 class NCARAdapter(BaseAdapter):
-    name="المركز الوطني للتنافسية"; domains=("ncar.gov.sa",)
+    name="المركز الوطني للوثائق والمحفوظات"; domains=("ncar.gov.sa",)
 
 ADAPTERS=[UQNAdapter(),BOEAdapter(),HRSDAdapter(),MOFAdapter(),GCAAdapter(),NCARAdapter()]
 
