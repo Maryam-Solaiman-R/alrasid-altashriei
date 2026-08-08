@@ -13,6 +13,7 @@ class Connector:
 
 CONNECTORS=[
  Connector("uqn","جريدة أم القرى",("https://www.uqn.gov.sa/decisions-and-regulations/",),("listing","decision_page","html"),1),
+ Connector("ncar","المركز الوطني للوثائق والمحفوظات",("https://ncar.gov.sa/",),("site_search","systems","regulations","documents","pdf"),1),   
  Connector("boe","هيئة الخبراء بمجلس الوزراء",("https://laws.boe.gov.sa/BoeLaws/Laws/Folders/1",),("catalog","consolidated_law"),1),
  Connector("ncar","المركز الوطني للوثائق والمحفوظات",("https://ncar.gov.sa/",),("catalog","archive"),1),
  Connector("mof","وزارة المالية",("https://www.mof.gov.sa/",),("site_search","decisions","pdf"),2),
