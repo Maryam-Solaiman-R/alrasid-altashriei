@@ -11,12 +11,11 @@ def _article_number(question: str):
 
 
 def _extract_change_metadata(text: str):
-    """Conservative extraction: only fields explicitly present in the official page text."""
     decision = ""
     date = ""
     patterns = [
-        r"(?:قرار\s+مجلس\s+الوزراء|قرار)\s+رقم\s*[\(（]?\s*([^\s\)）،,]+).*?وتاريخ\s*([0-9٠-٩/\-]+)",
-        r"(?:مرسوم\s+ملكي|الأمر\s+الملكي|أمر\s+ملكي)\s+رقم\s*[\(（]?\s*([^\)）،,]+).*?وتاريخ\s*([0-9٠-٩/\-]+)",
+        r"(?:قرار\s+مجلس\s+الوزراء|قرار\s+وزاري|قرار)\s+(?:برقم|رقم)\s*[\(（]?\s*([^\s\)）،,]+).*?(?:بتاريخ|وتاريخ)\s*([0-9٠-٩/\-]+)",
+        r"(?:مرسوم\s+ملكي|الأمر\s+الملكي|أمر\s+ملكي)\s+(?:برقم|رقم)\s*[\(（]?\s*([^\)）،,]+).*?(?:بتاريخ|وتاريخ)\s*([0-9٠-٩/\-]+)",
     ]
     for pattern in patterns:
         m = re.search(pattern, text or "", re.S)
@@ -31,42 +30,35 @@ def _article_excerpt(text: str, article_number: str):
     if not text:
         return ""
     if article_number:
-        patterns = [
-            rf"(?:المادة|مادة)\s*[\(（]?\s*{re.escape(article_number)}\s*[\)）]?(.{{0,1800}})",
-        ]
-        for pattern in patterns:
-            m = re.search(pattern, text, re.S)
-            if m:
-                return ("المادة " + article_number + " " + m.group(1))[:1800].strip()
-    # Look for explicit amendment language before falling back to a short page excerpt.
-    m = re.search(r"(.{0,450}(?:تعديل|تعدل|عدلت|إحلال|يلغى|تلغى|مادة معدلة).{0,1100})", text, re.S)
-    return (m.group(1) if m else text[:1400]).strip()
+        m = re.search(rf"(?:المادة|مادة)\s*[\(（]?\s*{re.escape(article_number)}\s*[\)）]?(.{{0,2200}})", text, re.S)
+        if m:
+            return ("المادة " + article_number + " " + m.group(1))[:2200].strip()
+    m = re.search(r"(.{0,500}(?:وثائق التعديل|مادة معدلة|تعديل|تعدل|عدلت|إحلال|يلغى|تلغى).{0,1500})", text, re.S)
+    return (m.group(1) if m else text[:1600]).strip()
 
 
-def _inspect_candidate(candidate, authority, question, article_number):
+def _inspect_candidate(candidate, authority, article_number):
     try:
         page = fetch_candidate_text(candidate["url"])
-    except Exception:
-        return None
+    except Exception as exc:
+        return None, f"{authority}: {type(exc).__name__}: {str(exc)[:180]}"
     text = page.get("text", "")
     if not text:
-        return None
-
+        return None, None
     decision_number, decision_date = _extract_change_metadata(text)
     excerpt = _article_excerpt(text, article_number)
-    has_change_language = any(k in text for k in ("مادة معدلة", "تعديل", "تعدل", "عدلت", "إحلال", "يلغى", "تلغى"))
-
+    has_change = any(k in text for k in ("وثائق التعديل", "مادة معدلة", "تعديل", "تعدل", "عدلت", "إحلال", "يلغى", "تلغى"))
     return {
         "authority": authority,
         "title": candidate.get("label") or page.get("title") or "وثيقة رسمية",
-        "article_number": article_number,
-        "change_status": "وجدت إشارة رسمية إلى تعديل" if has_change_language else "لم تثبت إشارة تعديل في النص المسترجع",
+        "article_number": article_number or None,
+        "change_status": "وجدت إشارة رسمية إلى تعديل" if has_change else "لم تثبت إشارة تعديل في النص المسترجع",
         "change_summary": excerpt,
-        "decision_number": decision_number,
-        "decision_date": decision_date,
+        "decision_number": decision_number or None,
+        "decision_date": decision_date or None,
         "source_url": page.get("url") or candidate["url"],
-        "confidence": "موثق من صفحة رسمية" if has_change_language else "يتطلب مراجعة الصفحة الرسمية",
-    }
+        "confidence": "موثق من صفحة رسمية" if has_change else "يتطلب مراجعة الصفحة الرسمية",
+    }, None
 
 
 def ask(question: str):
@@ -75,47 +67,50 @@ def ask(question: str):
         return {"status": "invalid_request", "message": "يرجى إدخال اسم النظام أو اللائحة، ويمكن إضافة رقم المادة."}
 
     article_number = _article_number(question)
-    discovered = []
-    errors = []
+    discovered, errors = [], []
 
-    # المصدران يعملان بالتوازي حتى لا يتسبب بطء أحدهما في تعليق الآخر مدة طويلة.
     with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = {}
-        for connector in CONNECTORS:
-            for root in connector.roots:
-                jobs[pool.submit(scan_root, root, question)] = connector
+        jobs = {pool.submit(scan_root, root, question): connector for connector in CONNECTORS for root in connector.roots}
         for future in as_completed(jobs):
             connector = jobs[future]
             try:
                 result = future.result()
+                for err in result.get("errors", []):
+                    errors.append({"authority": connector.authority, "stage": "discovery", "error": err})
                 for item in result.get("candidates", [])[:6]:
                     discovered.append((item, connector.authority))
             except Exception as exc:
-                errors.append({"authority": connector.authority, "error": f"{type(exc).__name__}: {str(exc)[:220]}"})
+                errors.append({"authority": connector.authority, "stage": "discovery", "error": f"{type(exc).__name__}: {str(exc)[:220]}"})
 
-    # فحص أفضل النتائج فقط؛ الهدف السرعة والدقة لا الزحف الشامل.
     findings = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        jobs = [pool.submit(_inspect_candidate, c, a, question, article_number) for c, a in discovered[:8]]
+        jobs = [pool.submit(_inspect_candidate, c, a, article_number) for c, a in discovered[:10]]
         for future in as_completed(jobs):
             try:
-                item = future.result()
+                item, err = future.result()
                 if item:
                     findings.append(item)
-            except Exception:
-                pass
+                if err:
+                    errors.append({"authority": err.split(":",1)[0], "stage": "document", "error": err})
+            except Exception as exc:
+                errors.append({"authority": "غير محدد", "stage": "document", "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
 
-    # النتائج ذات إشارة التعديل أولاً.
     findings.sort(key=lambda x: (x["change_status"].startswith("وجدت"), bool(x["decision_number"])), reverse=True)
+    # Avoid duplicate source URLs.
+    unique = []
+    seen = set()
+    for x in findings:
+        if x["source_url"] not in seen:
+            seen.add(x["source_url"]); unique.append(x)
 
-    if not findings:
+    if not unique:
         return {
             "status": "not_found",
             "query": question,
             "article_number": article_number or None,
-            "message": "لم يتم العثور على نتيجة موثقة ضمن المصدرين الرسميين المحددين. لا يعرض الراصد استنتاجًا غير مثبت.",
+            "message": "تعذر استرجاع وثيقة رسمية موثقة من المصدرين المحددين. لا يعرض الراصد استنتاجًا غير مثبت.",
             "sources_checked": [c.authority for c in CONNECTORS],
-            "source_errors": errors,
+            "source_errors": errors[-8:],
             "findings": [],
         }
 
@@ -123,8 +118,8 @@ def ask(question: str):
         "status": "ok",
         "query": question,
         "article_number": article_number or None,
-        "message": "تم استرجاع نتائج من المصادر الرسمية. يرجى الاعتماد على رابط المصدر عند اتخاذ قرار مهني أو نظامي.",
+        "message": "تم استرجاع نتائج من مصادر رسمية. يعرض الراصد ما أمكن إثباته فقط.",
         "sources_checked": [c.authority for c in CONNECTORS],
-        "source_errors": errors,
-        "findings": findings[:6],
+        "source_errors": errors[-8:],
+        "findings": unique[:6],
     }
