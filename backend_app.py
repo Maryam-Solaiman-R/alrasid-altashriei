@@ -26,7 +26,7 @@ def health():
     return {"status":"ok","version":"1.6"}
 
 # Routers are isolated so one optional component does not prevent startup.
-for module_name in ("article_api","agent_api","connector_api","monitor_api"):
+for module_name in ("article_api","agent_api","connector_api","monitor_api","query_api"):
     try:
         module=__import__(module_name)
         app.include_router(module.router)
