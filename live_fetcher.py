@@ -1,10 +1,13 @@
-
-import hashlib, time
+import hashlib
+import time
 from urllib.request import Request, urlopen
 from urllib.parse import urljoin
+
 from live_connectors import connector_for_url, discover_candidates
 
-UA="Saudi-Regulatory-Monitor/1.5 (+public regulatory research)"
+
+UA = "Saudi-Regulatory-Monitor/1.6 (+public regulatory research)"
+
 
 def fetch(url, timeout=45):
     req = Request(
@@ -36,18 +39,56 @@ def fetch(url, timeout=45):
 
         except Exception as e:
             last_error = e
+
             if attempt == 0:
                 time.sleep(2)
 
     raise last_error
 
-def scan_root(root):
-    got=fetch(root)
-    ct=got["content_type"].lower()
-    if "html" not in ct:
-        return {"root":root,"candidates":[],"sha256":got["sha256"]}
-    html=got["body"].decode("utf-8","replace")
-    candidates=discover_candidates(html,root)
-    for c in candidates:
-        c["url"]=urljoin(root,c["href"])
-    return {"root":root,"candidates":candidates,"sha256":got["sha256"]}
+
+def scan_root(root, query=None):
+    """
+    Scan an official source root and discover candidate
+    regulatory pages.
+
+    query is optional and is kept for compatibility with
+    question-aware live search.
+    """
+    got = fetch(root)
+
+    content_type = got["content_type"].lower()
+
+    if "html" not in content_type:
+        return {
+            "root": root,
+            "candidates": [],
+            "sha256": got["sha256"],
+        }
+
+    html = got["body"].decode("utf-8", "replace")
+
+    candidates = discover_candidates(html, root)
+
+    normalized = []
+
+    for candidate in candidates:
+        href = candidate.get("href") or candidate.get("url")
+
+        if not href:
+            continue
+
+        url = urljoin(root, href)
+
+        item = dict(candidate)
+        item["url"] = url
+
+        if query:
+            item["query"] = query
+
+        normalized.append(item)
+
+    return {
+        "root": root,
+        "candidates": normalized,
+        "sha256": got["sha256"],
+    }
