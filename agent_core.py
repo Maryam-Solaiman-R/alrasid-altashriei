@@ -74,9 +74,11 @@ def ask(question: str, ncar_documents=None):
     # document metadata returned by that official endpoint and keep it explicitly
     # labelled as metadata (not article text).
     browser_ncar_findings = []
+    browser_docs_received = 0
     for doc in (ncar_documents or [])[:10]:
         if not isinstance(doc, dict):
             continue
+        browser_docs_received += 1
         doc_id = str(doc.get("id") or "").strip()
         title = str(doc.get("title_ar") or doc.get("name") or doc.get("title_en") or "").strip()
         if not doc_id or not title:
@@ -139,6 +141,7 @@ def ask(question: str, ncar_documents=None):
             "message": "تعذر استرجاع وثيقة رسمية موثقة من المصدرين المحددين. لا يعرض الراصد استنتاجًا غير مثبت.",
             "sources_checked": [c.authority for c in CONNECTORS],
             "source_errors": errors[-8:],
+            "browser_fallback": {"ncar_documents_received": browser_docs_received, "used": bool(browser_ncar_findings)},
             "findings": [],
         }
 
@@ -149,5 +152,6 @@ def ask(question: str, ncar_documents=None):
         "message": "تم استرجاع نتائج من مصادر رسمية. يعرض الراصد ما أمكن إثباته فقط.",
         "sources_checked": [c.authority for c in CONNECTORS],
         "source_errors": errors[-8:],
+        "browser_fallback": {"ncar_documents_received": browser_docs_received, "used": bool(browser_ncar_findings)},
         "findings": unique[:6],
     }

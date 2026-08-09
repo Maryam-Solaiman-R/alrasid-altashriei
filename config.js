@@ -1,3 +1,2 @@
-// After backend deployment, set:
-// window.REGULATORY_API_BASE = "https://YOUR-BACKEND.example.com";
-window.REGULATORY_API_BASE = "";
+// Production backend on Render
+window.REGULATORY_API_BASE = "https://alrasid-altashriei.onrender.com";

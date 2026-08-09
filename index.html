@@ -32,7 +32,7 @@ footer{text-align:center;color:#81939a;font-size:12px;padding:22px}.small{font-s
 <div id="result"></div>
 </section>
 </main>
-<footer>الراصد التشريعي — إصدار 2.0</footer>
+<footer>الراصد التشريعي — إصدار 2.4</footer>
 <script src="config.js"></script>
 <script>
 const API_BASE=(window.REGULATORY_API_BASE||localStorage.getItem('regulatory_api_base')||'').replace(/\/$/,'');
@@ -45,28 +45,31 @@ async function runSearch(){
  if(!API_BASE){out.innerHTML='<div class="status">لم يتم تحديد عنوان خدمة API في ملف <b>config.js</b>.</div>';return}
  const question=article?`${instrument} المادة ${article}`:instrument;
  btn.disabled=true;btn.innerHTML='<span class="loading"></span> جارٍ التحقق';out.innerHTML='<div class="status"><span class="loading"></span> جارٍ البحث في المصدرين الرسميين...</div>';
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
+ const apiController=new AbortController(),apiTimer=setTimeout(()=>apiController.abort(),45000);
  try{
-  // NCAR browser fallback: the user's browser can reach the official API even when
-  // the Render host is blocked/timed out. Only official NCAR JSON is forwarded.
+  // Browser-assisted NCAR fallback. It has its own short timeout so a blocked NCAR
+  // request never consumes the API request's timeout budget.
   let ncar_documents=[];
   try{
+   const ncarController=new AbortController(),ncarTimer=setTimeout(()=>ncarController.abort(),10000);
    const ncarPayload={approveTool_id:null,documentCategory_id:null,name:instrument,ApproveDate:null,approveDate_from:null,approveDate_to:null,omAlQourah_version:null,omAlQourah_date:null,is_valid:null,is_printed:null,is_translated:null,generalCategory_id:[],particularCategory_id:[],governmentalAgency_id:null,governmentalAgency_childId:null,alphabeticalTopic_id:null,alphabeticalCategory_id:null,alphabeticalSubCategory_id:[],releaseOrgId:null,identical:1,number:null,PublishingStatus:null};
-   const nr=await fetch('https://ncar.gov.sa/api/index.php/api/documents/document-search/1/10/approveDate/DESC',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(ncarPayload),signal:controller.signal});
-   if(nr.ok){
-    const nd=await nr.json(),seen=new Set();
-    const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.id&&(v.title_ar||v.title_en||v.name)&&!seen.has(String(v.id))){seen.add(String(v.id));ncar_documents.push(v)}Object.values(v).forEach(walk)}};
-    walk(nd); ncar_documents=ncar_documents.slice(0,10);
-   }
+   try{
+    const nr=await fetch('https://ncar.gov.sa/api/index.php/api/documents/document-search/1/10/approveDate/DESC',{method:'POST',mode:'cors',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(ncarPayload),signal:ncarController.signal});
+    if(nr.ok){
+     const nd=await nr.json(),seen=new Set();
+     const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.id&&(v.title_ar||v.title_en||v.name)&&!seen.has(String(v.id))){seen.add(String(v.id));ncar_documents.push(v)}Object.values(v).forEach(walk)}};
+     walk(nd); ncar_documents=ncar_documents.slice(0,10);
+    }
+   }finally{clearTimeout(ncarTimer)}
   }catch(_e){}
-  const r=await fetch(API_BASE+'/api/v1/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,ncar_documents}),signal:controller.signal});
+  const r=await fetch(API_BASE+'/api/v1/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,ncar_documents}),signal:apiController.signal});
   const data=await r.json();
   if(!r.ok)throw new Error('HTTP '+r.status);
   const f=data.findings||[];
   if(!f.length){out.innerHTML='<div class="status">'+esc(data.message||'لم يتم العثور على نتيجة موثقة ضمن نطاق البحث المحدد.')+'</div>';return}
   out.innerHTML='<div class="status">'+esc(data.message||'تم استرجاع نتائج من المصادر الرسمية.')+'</div>'+f.map(x=>`<article class="finding"><h3>${esc(x.title||'وثيقة رسمية')}</h3><div class="meta"><div><b>المادة</b><br>${esc(x.article_number||'غير محددة')}</div><div><b>حالة التغيير</b><br>${esc(x.change_status||'—')}</div><div><b>القرار / التاريخ</b><br>${esc(x.decision_number||'—')} / ${esc(x.decision_date||'—')}</div></div><div class="excerpt">${esc(x.change_summary||'')}</div>${x.source_url?`<a class="official" href="${esc(x.source_url)}" target="_blank" rel="noopener">فتح المصدر الرسمي</a>`:''}</article>`).join('');
  }catch(e){out.innerHTML='<div class="status">'+(e.name==='AbortError'?'انتهت مهلة البحث دون استجابة كاملة. لم تُعرض نتيجة غير موثقة.':'تعذر الاتصال بخدمة الراصد في الوقت الحالي.')+'</div>'}
- finally{clearTimeout(timer);btn.disabled=false;btn.textContent='بحث في المصادر الرسمية'}
+ finally{clearTimeout(apiTimer);btn.disabled=false;btn.textContent='بحث في المصادر الرسمية'}
 }
 </script>
 </body></html>

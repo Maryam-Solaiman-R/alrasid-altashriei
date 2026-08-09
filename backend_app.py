@@ -1,16 +1,18 @@
 import os
 import socket
 import time
+from pathlib import Path
 import requests
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_api import router as agent_router
 
 app = FastAPI(
     title="الراصد التشريعي API",
-    version="2.0",
+    version="2.4",
     description="خدمة مبسطة للتحقق من الأنظمة واللوائح وتغييرات المواد من مصدرين رسميين.",
 )
 
@@ -29,14 +31,18 @@ app.add_middleware(
 app.include_router(agent_router)
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def root():
-    return {"name": "الراصد التشريعي", "version": "2.0", "status": "ready"}
+    return FileResponse(Path(__file__).with_name("index.html"), media_type="text/html; charset=utf-8")
+
+@app.get("/config.js", include_in_schema=False)
+def frontend_config():
+    return FileResponse(Path(__file__).with_name("config.js"), media_type="application/javascript; charset=utf-8")
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "2.0"}
+    return {"status": "ok", "version": "2.4"}
 
 
 @app.get("/api/v1/diagnostics/sources", tags=["diagnostics"])
