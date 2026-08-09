@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from live_connectors import CONNECTORS
 from live_fetcher import scan_root, fetch_candidate_text
 from reader_bridge import search_and_read
+from amendment_tracker import build_amendment_timeline
 
 
 def _article_number(question: str):
@@ -122,6 +123,8 @@ def ask(question: str, ncar_documents=None):
             "confidence": "بيانات فهرسة رسمية من NCAR",
         })
 
+    amendment_timeline = build_amendment_timeline(question, ncar_documents or [], article_number or None)
+
     reader_findings = []
     reader_diagnostics = {"boe": 0, "ncar": 0, "errors": []}
 
@@ -178,6 +181,20 @@ def ask(question: str, ncar_documents=None):
         if x["source_url"] not in seen:
             seen.add(x["source_url"]); unique.append(x)
 
+    if amendment_timeline.get("events"):
+        return {
+            "status": "ok",
+            "query": question,
+            "article_number": article_number or None,
+            "message": "تم العثور على سجل تعديلات رسمي. يعرض الراصد المواد وأداة التعديل والتاريخ وما أمكن استخراجه من النص قبل/بعد.",
+            "sources_checked": [c.authority for c in CONNECTORS],
+            "source_errors": errors[-8:],
+            "browser_fallback": {"ncar_documents_received": browser_docs_received, "used": bool(browser_ncar_findings)},
+            "reader_bridge": {"used": bool(reader_findings), "findings": len(reader_findings), "diagnostics": reader_diagnostics},
+            "amendment_timeline": amendment_timeline,
+            "findings": unique[:6],
+        }
+
     if not unique:
         return {
             "status": "not_found",
@@ -188,6 +205,7 @@ def ask(question: str, ncar_documents=None):
             "source_errors": errors[-8:],
             "browser_fallback": {"ncar_documents_received": browser_docs_received, "used": bool(browser_ncar_findings)},
             "reader_bridge": {"used": bool(reader_findings), "findings": len(reader_findings), "diagnostics": reader_diagnostics},
+            "amendment_timeline": amendment_timeline,
             "findings": [],
         }
 
@@ -200,5 +218,6 @@ def ask(question: str, ncar_documents=None):
         "source_errors": errors[-8:],
         "browser_fallback": {"ncar_documents_received": browser_docs_received, "used": bool(browser_ncar_findings)},
         "reader_bridge": {"used": bool(reader_findings), "findings": len(reader_findings), "diagnostics": reader_diagnostics},
+        "amendment_timeline": amendment_timeline,
         "findings": unique[:6],
     }

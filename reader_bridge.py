@@ -102,3 +102,34 @@ def search_and_read(query: str, domain: str, limit: int = 4) -> tuple[list[dict]
         if len(docs) >= limit:
             break
     return docs, errors
+
+
+def official_links_in_text(text: str, domain: str | None = None) -> list[str]:
+    """Extract only HTTPS links from official Saudi source domains."""
+    allowed = ("ncar.gov.sa", "laws.boe.gov.sa")
+    out, seen = [], set()
+    for u in re.findall(r"https://[^\s\)\]\>\"']+", text or "", flags=re.I):
+        u = u.replace("\\", "").rstrip(".,؛،)")
+        host_ok = any(d in u.lower() for d in allowed)
+        if domain:
+            host_ok = domain.lower() in u.lower()
+        if host_ok and u not in seen:
+            seen.add(u); out.append(u)
+    return out
+
+def read_ncar_document_and_resources(doc_id: str, max_resources: int = 3):
+    """Read an NCAR detail page, then follow official PDF/resource links if exposed."""
+    official = "https://ncar.gov.sa/document-details/" + str(doc_id).strip()
+    pages, errors = [], []
+    page, err = read_official_url(official)
+    if err:
+        errors.append(err)
+    if page:
+        pages.append(page)
+        links = official_links_in_text(page.get("text",""), "ncar.gov.sa")
+        preferred = [u for u in links if ("api/resource/" in u or ".pdf" in u.lower() or "AttachPath" in u)]
+        for u in preferred[:max_resources]:
+            p, e = read_official_url(u)
+            if e: errors.append(e)
+            if p: pages.append(p)
+    return pages, errors

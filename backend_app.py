@@ -12,7 +12,7 @@ from agent_api import router as agent_router
 
 app = FastAPI(
     title="الراصد التشريعي API",
-    version="2.7",
+    version="2.8",
     description="خدمة مبسطة للتحقق من الأنظمة واللوائح وتغييرات المواد من مصدرين رسميين.",
 )
 
@@ -42,7 +42,7 @@ def frontend_config():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "2.7"}
+    return {"status": "ok", "version": "2.8"}
 
 
 @app.get("/api/v1/diagnostics/sources", tags=["diagnostics"])
