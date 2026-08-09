@@ -21,7 +21,7 @@ footer{text-align:center;color:#81939a;font-size:12px;padding:22px}.small{font-s
 <main>
 <section class="card">
 <h2 class="section-title">التحقق من التغييرات التشريعية</h2>
-<p class="desc">أدخل اسم النظام أو اللائحة. ويمكن تحديد رقم المادة لعرض نتيجة أكثر دقة. </p>
+<p class="desc">أدخل اسم النظام أو اللائحة. ويمكن تحديد رقم المادة لعرض نتيجة أكثر دقة.</p>
 <div class="row">
 <div><label class="label" for="instrument">اسم النظام أو اللائحة</label><input class="field" id="instrument" placeholder="مثال: نظام المنافسات والمشتريات الحكومية"></div>
 <div><label class="label" for="article">رقم المادة — اختياري</label><input class="field" id="article" inputmode="numeric" placeholder="مثال: 88"></div>
@@ -32,7 +32,7 @@ footer{text-align:center;color:#81939a;font-size:12px;padding:22px}.small{font-s
 <div id="result"></div>
 </section>
 </main>
-<footer>الراصد التشريعي — إصدار 2.4</footer>
+<footer>الراصد التشريعي — إصدار 2.7</footer>
 <script src="config.js"></script>
 <script>
 const API_BASE=(window.REGULATORY_API_BASE||localStorage.getItem('regulatory_api_base')||'').replace(/\/$/,'');
@@ -54,12 +54,12 @@ async function runSearch(){
    const ncarController=new AbortController(),ncarTimer=setTimeout(()=>ncarController.abort(),10000);
    const ncarPayload={approveTool_id:null,documentCategory_id:null,name:instrument,ApproveDate:null,approveDate_from:null,approveDate_to:null,omAlQourah_version:null,omAlQourah_date:null,is_valid:null,is_printed:null,is_translated:null,generalCategory_id:[],particularCategory_id:[],governmentalAgency_id:null,governmentalAgency_childId:null,alphabeticalTopic_id:null,alphabeticalCategory_id:null,alphabeticalSubCategory_id:[],releaseOrgId:null,identical:1,number:null,PublishingStatus:null};
    try{
-    const nr=await fetch('https://ncar.gov.sa/api/index.php/api/documents/document-search/1/10/approveDate/DESC',{method:'POST',mode:'cors',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(ncarPayload),signal:ncarController.signal});
-    if(nr.ok){
-     const nd=await nr.json(),seen=new Set();
-     const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.id&&(v.title_ar||v.title_en||v.name)&&!seen.has(String(v.id))){seen.add(String(v.id));ncar_documents.push(v)}Object.values(v).forEach(walk)}};
-     walk(nd); ncar_documents=ncar_documents.slice(0,10);
-    }
+    const endpoint='https://ncar.gov.sa/api/index.php/api/documents/document-search/1/10/approveDate/DESC';
+    const collect=nd=>{const seen=new Set(ncar_documents.map(x=>String(x.id)));const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.id&&(v.title_ar||v.title_en||v.name)&&!seen.has(String(v.id))){seen.add(String(v.id));ncar_documents.push(v)}Object.values(v).forEach(walk)}};walk(nd)};
+    let nr=await fetch(endpoint,{method:'POST',mode:'cors',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(ncarPayload),signal:ncarController.signal});
+    if(nr.ok)collect(await nr.json());
+    if(!ncar_documents.length){ncarPayload.identical=0;nr=await fetch(endpoint,{method:'POST',mode:'cors',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(ncarPayload),signal:ncarController.signal});if(nr.ok)collect(await nr.json())}
+    ncar_documents=ncar_documents.slice(0,10);
    }finally{clearTimeout(ncarTimer)}
   }catch(_e){}
   const r=await fetch(API_BASE+'/api/v1/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,ncar_documents}),signal:apiController.signal});
