@@ -1,0 +1,40 @@
+[
+  {
+    "id": "boe-gpl-1440",
+    "title": "نظام المنافسات والمشتريات الحكومية",
+    "type": "نظام",
+    "source": "هيئة الخبراء بمجلس الوزراء",
+    "source_url": "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/24c563f9-7292-49c8-b0fb-aa9800b999f1/1",
+    "issue_hijri": "1440/11/13",
+    "issue_gregorian": "2019-07-16",
+    "publication_hijri": "1440/11/29",
+    "publication_gregorian": "2019-08-01",
+    "status": "ساري",
+    "issuing_tools": [
+      "مرسوم ملكي رقم (م/128) وتاريخ 1440/11/13هـ",
+      "قرار مجلس الوزراء رقم (649) وتاريخ 1440/11/13هـ"
+    ]
+  },
+  {
+    "id": "ncar-gpl-1440",
+    "title": "نظام المنافسات والمشتريات الحكومية لعام 1440هـ",
+    "type": "نظام",
+    "source": "المركز الوطني للوثائق والمحفوظات",
+    "source_url": "https://ncar.gov.sa/document-details/...",
+    "status": "موثق بالمركز"
+  },
+  {
+    "id": "ncar-gpl-reg",
+    "title": "اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية",
+    "type": "لائحة",
+    "source": "المركز الوطني للوثائق والمحفوظات",
+    "source_url": "https://ncar.gov.sa/document-details/...",
+    "amendments": [
+      {
+        "title": "اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية المعدلة لعام 1441هـ",
+        "tool": "قرار وزاري رقم 3479",
+        "date_hijri": "1441/08/11"
+      }
+    ]
+  }
+]
