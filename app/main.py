@@ -91,15 +91,26 @@ async def _free_search(req):
         lines += ['', '## أبرز النتائج الرسمية']
         for i,x in enumerate(results[:8],1):
             content=re.sub(r'\s+',' ',x.get('content','') or x.get('snippet','')).strip()
-            # Show the most relevant passage from the actual official document/page.
-            sn=content[:520]
+            # Presentation-only cleanup: suppress web-template / JavaScript fragments.
+            content=re.sub(r'\{\{.*?\}\}|function\s*\([^)]*\)\s*\{.*?\}|toLocaleTimeString\([^)]*\)|limitBodyText\([^)]*\)', ' ', content, flags=re.I)
+            content=re.sub(r'\b(?:Facebook|WhatsApp|Read more|Scroll)\b', ' ', content, flags=re.I)
+            content=re.sub(r'\s+',' ',content).strip(' -–—|')
+            sn=content[:420]
             for w in words:
                 pos=content.find(w)
                 if pos>=0:
-                    sn=content[max(0,pos-160):pos+500]; break
-            if len(sn)>700: sn=sn[:697]+'...'
-            lines.append(f'**{i}. {x.get("title") or "مصدر رسمي"}**')
-            if x.get('document_type'): lines.append(f'نوع المصدر: {x.get("document_type")}')
+                    sn=content[max(0,pos-100):pos+430]; break
+            if len(sn)>520: sn=sn[:517].rstrip()+'...'
+            lines.append(f'### {i}. {x.get("title") or "مصدر رسمي"}')
+            meta=[]
+            if x.get('document_type'): meta.append(f'نوع المصدر: {x.get("document_type")}')
+            try:
+                from urllib.parse import urlparse
+                host=urlparse(x.get('url','')).netloc.replace('www.','')
+                if host: meta.append(f'الجهة/النطاق: {host}')
+            except Exception:
+                pass
+            if meta: lines.append(' | '.join(meta))
             if sn: lines.append(sn)
     else:
         lines += ['', 'لم يتم العثور على نتيجة رسمية مطابقة للاستعلام. جرّب كتابة اسم النظام أو اللائحة أو رقم المادة أو القرار بصورة أكثر تحديدًا.']
@@ -178,6 +189,11 @@ def export_docx(req:ExportReq):
     d=Document()
     sec=d.sections[0]
     sec.top_margin=Pt(42); sec.bottom_margin=Pt(38); sec.right_margin=Pt(46); sec.left_margin=Pt(46)
+    sectPr=sec._sectPr
+    bidi_sec=sectPr.find(qn('w:bidi'))
+    if bidi_sec is None:
+        bidi_sec=OxmlElement('w:bidi'); sectPr.append(bidi_sec)
+    bidi_sec.set(qn('w:val'),'1')
 
     NAVY='15445A'; GREEN='07A869'; BLUE='3D7EB9'; TEAL='0DA9A6'; GOLD='C1B489'; PALE='F4FAF8'; LINE='DCE8E5'; WHITE='FFFFFF'; GRAY='60777D'
 
@@ -262,7 +278,7 @@ def export_docx(req:ExportReq):
 
     # Ministry-inspired clean header band.
     hdr=d.add_table(rows=1,cols=2); rtl_table(hdr); hdr.autofit=True
-    set_cell_text(hdr.cell(0,0),'الراصد التشريعي',True,WHITE,20); shade(hdr.cell(0,0),NAVY)
+    set_cell_text(hdr.cell(0,0),'الراصد التشريعي',True,NAVY,20); shade(hdr.cell(0,0),'FFFFFF')
     set_cell_text(hdr.cell(0,1),'ر',True,WHITE,18); shade(hdr.cell(0,1),GREEN)
     p=d.add_paragraph(); rr=p.add_run('دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية')
     rr.bold=True; rr.font.name='Arial'; rr.font.size=Pt(11.5); rr.font.color.rgb=RGBColor.from_string(GREEN); rr._element.rPr.rFonts.set(qn('w:cs'),'Arial'); _rtl_paragraph(p)
@@ -294,7 +310,7 @@ def export_docx(req:ExportReq):
 def home():
     opts="".join(f'<label><input type="checkbox" name="src" value="{i}"> {html.escape(n)}</label>' for i,n,_ in SOURCES)
     return """<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الراصد التشريعي</title>
-<style>:root{--g:#07A869;--b:#3D7EB9;--t:#0DA9A6;--n:#15445A;--gold:#C1B489;--line:#dce8e5}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial;color:var(--n);background:#fff}.hero{padding:42px 20px 70px;background:linear-gradient(135deg,#fff,#f3faf8);position:relative;overflow:hidden}.hero:before{content:"";position:absolute;width:520px;height:190px;border-radius:50%;background:linear-gradient(90deg,#07a86922,#3d7eb922);top:-130px;right:-70px}.inner,.shell{max-width:1100px;margin:auto}.brand{display:flex;gap:15px;align-items:center}.logo{width:58px;height:58px;border-radius:18px;background:linear-gradient(145deg,var(--g),var(--t));color:#fff;display:grid;place-items:center;font-size:28px;font-weight:bold}h1{margin:0;font-size:38px}.tag{color:var(--g);font-weight:bold;margin-top:6px;font-size:18px}.intro{margin-top:18px;color:#536c72;font-size:17px}.shell{margin-top:-35px;padding:0 18px 40px;position:relative}.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 14px 38px #15445a12;margin-bottom:18px}textarea{width:100%;min-height:115px;border:1px solid #cadbd6;border-radius:15px;padding:16px;font:inherit;line-height:1.8;outline:none}textarea:focus{border-color:var(--g);box-shadow:0 0 0 4px #07a86914}.grid{display:grid;grid-template-columns:1fr 240px;gap:14px;align-items:end;margin-top:15px}.drop{position:relative}.dropbtn{width:100%;background:#fff;border:1px solid #cadbd6;color:var(--n);border-radius:13px;padding:13px;font:inherit;text-align:right}.menu{display:none;position:absolute;right:0;left:0;top:52px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;max-height:320px;overflow:auto;z-index:9;box-shadow:0 15px 35px #15445a25}.menu.open{display:block}.menu label{display:block;padding:9px;border-radius:8px;font-size:14px}.menu label:hover{background:#f0f8f5}.menu input{accent-color:var(--g)}button{cursor:pointer}.go{border:0;border-radius:13px;padding:14px;background:linear-gradient(135deg,var(--g),#079e75);color:#fff;font-weight:bold;font-size:16px}.go:disabled{opacity:.55}.result{line-height:2;white-space:pre-wrap}.citebox{margin-top:20px;padding:15px;background:#f5f8f9;border-right:4px solid var(--gold);border-radius:10px}.citebox a{color:var(--b);font-weight:bold;text-decoration:none;display:block;margin:5px 0}.actions{display:none;gap:8px;margin-top:16px}.actions button{border:1px solid #d6e5ef;background:#eef5fa;color:var(--b);border-radius:10px;padding:10px 14px;font-weight:bold}.status{margin-top:12px;color:#60777d}@media(max-width:700px){.grid{grid-template-columns:1fr}h1{font-size:30px}}</style></head>
+<style>:root{--g:#07A869;--b:#3D7EB9;--t:#0DA9A6;--n:#15445A;--gold:#C1B489;--line:#dce8e5}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial;color:var(--n);background:#fff}.hero{padding:42px 20px 70px;background:linear-gradient(135deg,#fff,#f3faf8);position:relative;overflow:hidden}.hero:before{content:"";position:absolute;width:520px;height:190px;border-radius:50%;background:linear-gradient(90deg,#07a86922,#3d7eb922);top:-130px;right:-70px}.inner,.shell{max-width:1100px;margin:auto}.brand{display:flex;gap:15px;align-items:center}.logo{width:58px;height:58px;border-radius:18px;background:linear-gradient(145deg,var(--g),var(--t));color:#fff;display:grid;place-items:center;font-size:28px;font-weight:bold}h1{margin:0;font-size:38px}.tag{color:var(--g);font-weight:bold;margin-top:6px;font-size:18px}.intro{margin-top:18px;color:#536c72;font-size:17px}.shell{margin-top:-35px;padding:0 18px 40px;position:relative}.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 14px 38px #15445a12;margin-bottom:18px}textarea{width:100%;min-height:115px;border:1px solid #cadbd6;border-radius:15px;padding:16px;font:inherit;line-height:1.8;outline:none}textarea:focus{border-color:var(--g);box-shadow:0 0 0 4px #07a86914}.grid{display:grid;grid-template-columns:1fr 240px;gap:14px;align-items:end;margin-top:15px}.drop{position:relative}.dropbtn{width:100%;background:#fff;border:1px solid #cadbd6;color:var(--n);border-radius:13px;padding:13px;font:inherit;text-align:right}.menu{display:none;position:absolute;right:0;left:0;top:52px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;max-height:320px;overflow:auto;z-index:9;box-shadow:0 15px 35px #15445a25}.menu.open{display:block}.menu label{display:block;padding:9px;border-radius:8px;font-size:14px}.menu label:hover{background:#f0f8f5}.menu input{accent-color:var(--g)}button{cursor:pointer}.go{border:0;border-radius:13px;padding:14px;background:linear-gradient(135deg,var(--g),#079e75);color:#fff;font-weight:bold;font-size:16px}.go:disabled{opacity:.55}.result{line-height:1.9;white-space:normal;text-align:right;direction:rtl}.result h2{font-size:24px;margin:8px 0 14px;color:var(--n)}.result h3{font-size:17px;margin:22px 0 7px;padding:10px 12px;background:#f4faf8;border-right:4px solid var(--g);border-radius:8px;color:var(--n)}.result>div{margin:5px 0}.result strong{color:var(--n)}.citebox{margin-top:20px;padding:15px;background:#f5f8f9;border-right:4px solid var(--gold);border-radius:10px}.citebox a{color:var(--b);font-weight:bold;text-decoration:none;display:block;margin:5px 0}.actions{display:none;gap:8px;margin-top:16px}.actions button{border:1px solid #d6e5ef;background:#eef5fa;color:var(--b);border-radius:10px;padding:10px 14px;font-weight:bold}.status{margin-top:12px;color:#60777d}@media(max-width:700px){.grid{grid-template-columns:1fr}h1{font-size:30px}}</style></head>
 <body><header class="hero"><div class="inner"><div class="brand"><div class="logo">ر</div><div><h1>الراصد التشريعي</h1><div class="tag">دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية</div></div></div><div class="intro">اسأل عن نظام أو لائحة أو مادة تنظيمية، واستعرض ما تغيّر، وتحقّق من المصدر الرسمي.</div></div></header>
 <main class="shell"><section class="card"><b>ماذا تريد أن تعرف؟</b><textarea id="q" placeholder="مثال: ما المواد التي تم تعديلها في اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية؟"></textarea><div class="grid"><div class="drop"><b>مصادر البحث</b><button class="dropbtn" id="dropbtn"><span id="lbl">جميع المصادر الرسمية</span> ▾</button><div id="menu" class="menu"><label><input id="all" type="checkbox" checked > جميع المصادر الرسمية</label>"""+opts+"""</div></div><button id="go" class="go" type="button">بحث وتحليل</button></div><div id="st" class="status"></div></section>
 <section class="card"><b>نتائج الراصد</b><div id="out" class="result">اكتب سؤالك، وحدد المصادر التي تريد البحث فيها، ثم اضغط «بحث وتحليل».</div><div id="acts" class="actions"><button id="xlsxBtn" type="button">تصدير Excel</button><button id="docxBtn" type="button">تصدير Word</button></div></section></main>
