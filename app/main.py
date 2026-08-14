@@ -103,7 +103,8 @@ async def _free_search(req):
             if sn: lines.append(sn)
     else:
         lines += ['', 'لم يتم العثور على نتيجة رسمية مطابقة للاستعلام. جرّب كتابة اسم النظام أو اللائحة أو رقم المادة أو القرار بصورة أكثر تحديدًا.']
-    data={'answer':'\n'.join(lines),'citations':citations,'sources':[x[1] for x in ss], 'mode':'free'}
+    discovery_mode=(results[0].get('discovery') if results else 'none')
+    data={'answer':'\n'.join(lines),'citations':citations,'sources':[x[1] for x in ss], 'mode':discovery_mode}
     _CACHE[key]=(now,data)
     return data
 

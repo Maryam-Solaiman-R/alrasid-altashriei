@@ -1,4 +1,4 @@
-import re, io, asyncio
+import re, io, asyncio, os
 from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 import httpx
 from bs4 import BeautifulSoup
@@ -86,18 +86,66 @@ async def fetch_document(client,item):
     except Exception: pass
     return item
 
+async def _tavily_results(client, query, domains, limit):
+    """Primary live-web discovery layer. One Tavily credit per user search (basic)."""
+    api_key=(os.getenv('TAVILY_API_KEY') or '').strip()
+    if not api_key:
+        return None
+    payload={
+        'query': query,
+        'topic': 'general',
+        'search_depth': 'basic',
+        'max_results': min(max(limit, 8), 20),
+        'include_domains': domains,
+        'include_answer': False,
+        'include_images': False,
+        'include_raw_content': False,
+    }
+    try:
+        r=await client.post('https://api.tavily.com/search', json=payload,
+                            headers={'Authorization':f'Bearer {api_key}'}, timeout=35)
+        r.raise_for_status()
+        data=r.json()
+        out=[]
+        for x in data.get('results',[]):
+            url=x.get('url','')
+            try: host=urlparse(url).netloc.lower()
+            except Exception: continue
+            if not any(d==host or host.endswith('.'+d) for d in domains):
+                continue
+            out.append({'title':_norm(x.get('title')) or url,
+                        'url':url,
+                        'snippet':_norm(x.get('content'))[:1400],
+                        'search_score':x.get('score',0),
+                        'discovery':'tavily'})
+        return out
+    except Exception as e:
+        # None means Tavily was configured but unavailable; caller may use free fallback.
+        return []
+
 async def discover(query,domains,limit=18):
-    seen={}; queries=expand_queries(query)
     async with httpx.AsyncClient(timeout=25,follow_redirects=True,headers=HEADERS) as client:
-        # Search selected official domains concurrently, with query expansion.
-        jobs=[_engine_results(client,q,d) for d in domains for q in queries[:4]]
-        batches=await asyncio.gather(*jobs,return_exceptions=True)
-        for batch in batches:
-            if isinstance(batch,list):
-                for x in batch:
-                    if x['url'] not in seen: seen[x['url']]=x
-        items=list(seen.values())[:max(limit,12)]
-        # Layer 2: read actual official pages/PDFs, not just search snippets.
-        enriched=await asyncio.gather(*(fetch_document(client,x) for x in items),return_exceptions=True)
-        out=[x for x in enriched if isinstance(x,dict)]
+        # Layer 1 (primary): Tavily performs one real web search restricted to official domains.
+        items=await _tavily_results(client, _norm(query), domains, limit)
+        discovery_mode='tavily'
+
+        # Layer 1 fallback: public search engines only when Tavily returns nothing/unavailable.
+        if not items:
+            discovery_mode='public_fallback'
+            seen={}; queries=expand_queries(query)
+            jobs=[_engine_results(client,q,d) for d in domains for q in queries[:3]]
+            batches=await asyncio.gather(*jobs,return_exceptions=True)
+            for batch in batches:
+                if isinstance(batch,list):
+                    for x in batch:
+                        if x['url'] not in seen: seen[x['url']]=x
+            items=list(seen.values())[:max(limit,12)]
+
+        # Layer 2: open/read the actual official page or PDF. Tavily is discovery, not evidence.
+        enriched=await asyncio.gather(*(fetch_document(client,x) for x in items[:max(limit,12)]),return_exceptions=True)
+        out=[]
+        for x in enriched:
+            if isinstance(x,dict):
+                x['discovery']=x.get('discovery',discovery_mode)
+                out.append(x)
     return out[:limit]
