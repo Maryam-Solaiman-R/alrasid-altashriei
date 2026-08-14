@@ -1,7 +1,5 @@
-fastapi==0.116.1
-uvicorn[standard]==0.35.0
-httpx==0.28.1
-beautifulsoup4==4.13.4
-pydantic==2.11.7
-openpyxl==3.1.5
-python-docx==1.2.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+openai>=1.100
+openpyxl>=3.1
+python-docx>=1.1
