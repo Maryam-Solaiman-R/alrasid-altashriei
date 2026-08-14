@@ -32,6 +32,11 @@ class Ask(BaseModel):
     question:str
     sources:list[str]=["all"]
 
+class ExportReq(Ask):
+    answer:str
+    citations:list[dict]=[]
+    source_names:list[str]=[]
+
 def selected(ids):
     if not ids or "all" in ids: return SOURCES
     wanted=set(ids); return [s for s in SOURCES if s[0] in wanted]
@@ -96,8 +101,8 @@ def _clean_md(text):
     return re.sub(r'\*\*|__|^#{1,6}\s*','',text,flags=re.M).strip()
 
 @app.post("/export/xlsx")
-def export_xlsx(req:Ask):
-    r=ask_ai(req); wb=Workbook(); ws=wb.active; ws.title="نتيجة الراصد"; ws.sheet_view.rightToLeft=True
+def export_xlsx(req:ExportReq):
+    r={"answer":req.answer,"citations":req.citations,"sources":req.source_names}; wb=Workbook(); ws=wb.active; ws.title="نتيجة الراصد"; ws.sheet_view.rightToLeft=True
     navy='15445A'; green='07A869'; blue='3D7EB9'; teal='0DA9A6'; gold='C1B489'; pale='F4FAF8'; white='FFFFFF'; line='DCE8E5'
     ws.merge_cells('A1:F1'); ws['A1']='الراصد التشريعي'; ws['A1'].font=Font(name='Arial',size=20,bold=True,color=navy); ws['A1'].alignment=Alignment(horizontal='right')
     ws.merge_cells('A2:F2'); ws['A2']='دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية'; ws['A2'].font=Font(name='Arial',size=11,bold=True,color=green); ws['A2'].alignment=Alignment(horizontal='right')
@@ -120,10 +125,9 @@ def export_xlsx(req:Ask):
     return StreamingResponse(b,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=rasid.xlsx"})
 
 @app.post("/export/docx")
-def export_docx(req:Ask):
-    # Word export only: ministry-style visual identity + true Arabic RTL.
-    # Search engine, Excel export, API settings, and web UI are intentionally untouched.
-    r=ask_ai(req)
+def export_docx(req:ExportReq):
+    # Word-only export. It uses the already returned search result and does NOT call the API again.
+    r={"answer":req.answer,"citations":req.citations,"sources":req.source_names}
     d=Document()
     sec=d.sections[0]
     sec.top_margin=Pt(42); sec.bottom_margin=Pt(38); sec.right_margin=Pt(46); sec.left_margin=Pt(46)
@@ -132,34 +136,45 @@ def export_docx(req:Ask):
 
     def shade(cell, color):
         tcPr=cell._tc.get_or_add_tcPr(); shd=tcPr.find(qn('w:shd'))
-        if shd is None: shd=OxmlElement('w:shd'); tcPr.append(shd)
+        if shd is None:
+            shd=OxmlElement('w:shd'); tcPr.append(shd)
         shd.set(qn('w:fill'),color)
 
-    def cell_margins(cell, top=110, start=130, bottom=110, end=130):
-        tc=cell._tc; tcPr=tc.get_or_add_tcPr(); mar=tcPr.first_child_found_in('w:tcMar')
-        if mar is None: mar=OxmlElement('w:tcMar'); tcPr.append(mar)
-        for tag,val in [('top',top),('start',start),('bottom',bottom),('end',end)]:
+    def cell_margins(cell, top=110, start=130, bottom=110, endm=130):
+        tcPr=cell._tc.get_or_add_tcPr(); mar=tcPr.first_child_found_in('w:tcMar')
+        if mar is None:
+            mar=OxmlElement('w:tcMar'); tcPr.append(mar)
+        for tag,val in [('top',top),('start',start),('bottom',bottom),('end',endm)]:
             node=mar.find(qn('w:'+tag))
-            if node is None: node=OxmlElement('w:'+tag); mar.append(node)
+            if node is None:
+                node=OxmlElement('w:'+tag); mar.append(node)
             node.set(qn('w:w'),str(val)); node.set(qn('w:type'),'dxa')
 
     def set_cell_text(cell, text, bold=False, color=NAVY, size=10.5):
-        cell.text=''; p=cell.paragraphs[0]; rr=p.add_run(str(text)); rr.bold=bold; rr.font.size=Pt(size); rr.font.color.rgb=RGBColor.from_string(color); _rtl_paragraph(p); cell_margins(cell)
+        cell.text=''
+        p=cell.paragraphs[0]
+        rr=p.add_run(str(text)); rr.bold=bold; rr.font.name='Arial'; rr.font.size=Pt(size); rr.font.color.rgb=RGBColor.from_string(color)
+        rr._element.rPr.rFonts.set(qn('w:cs'),'Arial')
+        _rtl_paragraph(p); cell_margins(cell)
         tcPr=cell._tc.get_or_add_tcPr(); bidi=OxmlElement('w:bidiVisual'); bidi.set(qn('w:val'),'1'); tcPr.append(bidi)
 
     def section_title(text, color=GREEN):
-        t=d.add_table(rows=1, cols=1); t.autofit=True; c=t.cell(0,0); shade(c,color); set_cell_text(c,text,True,WHITE,12.5)
+        t=d.add_table(rows=1, cols=1)
+        c=t.cell(0,0); shade(c,color); set_cell_text(c,text,True,WHITE,12.5)
         p=d.add_paragraph(); p.paragraph_format.space_after=Pt(1)
 
     def add_body(text, bold=False, color=NAVY, size=10.8):
         p=d.add_paragraph(); p.paragraph_format.space_after=Pt(5); p.paragraph_format.line_spacing=1.25
-        rr=p.add_run(text); rr.bold=bold; rr.font.size=Pt(size); rr.font.color.rgb=RGBColor.from_string(color); _rtl_paragraph(p); return p
+        rr=p.add_run(text); rr.bold=bold; rr.font.name='Arial'; rr.font.size=Pt(size); rr.font.color.rgb=RGBColor.from_string(color)
+        rr._element.rPr.rFonts.set(qn('w:cs'),'Arial')
+        _rtl_paragraph(p); return p
 
     def add_md_content(text):
-        lines=text.splitlines(); i=0
+        lines=(text or '').replace('\r','').splitlines(); i=0
         while i < len(lines):
             line=lines[i].strip()
-            if not line: i+=1; continue
+            if not line:
+                i+=1; continue
             if line.startswith('|') and line.endswith('|'):
                 block=[]
                 while i<len(lines) and lines[i].strip().startswith('|') and lines[i].strip().endswith('|'):
@@ -167,7 +182,8 @@ def export_docx(req:Ask):
                 rows=[[x.strip() for x in z.strip('|').split('|')] for z in block]
                 if len(rows)>1 and all(re.fullmatch(r'[-: ]+',x or '-') for x in rows[1]): rows.pop(1)
                 if rows:
-                    cols=max(len(x) for x in rows); tb=d.add_table(rows=len(rows),cols=cols); tb.style='Table Grid'; tb.autofit=True
+                    cols=max(len(x) for x in rows)
+                    tb=d.add_table(rows=len(rows),cols=cols); tb.style='Table Grid'; tb.autofit=True
                     for ri,row in enumerate(rows):
                         for ci in range(cols):
                             val=_clean_md(row[ci] if ci<len(row) else '')
@@ -182,18 +198,21 @@ def export_docx(req:Ask):
                 add_body('• '+_clean_md(re.sub(r'^[-*]\s+','',line)),False,NAVY,10.8); i+=1; continue
             add_body(_clean_md(line),False,NAVY,10.8); i+=1
 
-    # Base typography
-    styles=d.styles; styles['Normal'].font.name='Arial'; styles['Normal'].font.size=Pt(11)
+    # True RTL in all document defaults.
+    styles=d.styles
+    styles['Normal'].font.name='Arial'; styles['Normal'].font.size=Pt(11)
+    styles['Normal']._element.rPr.rFonts.set(qn('w:cs'),'Arial')
+    settings=d.settings._element
+    rtl=OxmlElement('w:themeFontLang'); rtl.set(qn('w:val'),'ar-SA'); settings.append(rtl)
 
-    # Ministry-style header band
+    # Ministry-inspired clean header band.
     hdr=d.add_table(rows=1,cols=2); hdr.autofit=True
     set_cell_text(hdr.cell(0,0),'الراصد التشريعي',True,WHITE,20); shade(hdr.cell(0,0),NAVY)
     set_cell_text(hdr.cell(0,1),'ر',True,WHITE,18); shade(hdr.cell(0,1),GREEN)
-    hdr.columns[0].width=Pt(410); hdr.columns[1].width=Pt(55)
-    p=d.add_paragraph(); rr=p.add_run('دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية'); rr.bold=True; rr.font.size=Pt(11.5); rr.font.color.rgb=RGBColor.from_string(GREEN); _rtl_paragraph(p)
+    p=d.add_paragraph(); rr=p.add_run('دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية')
+    rr.bold=True; rr.font.name='Arial'; rr.font.size=Pt(11.5); rr.font.color.rgb=RGBColor.from_string(GREEN); rr._element.rPr.rFonts.set(qn('w:cs'),'Arial'); _rtl_paragraph(p)
     p.paragraph_format.space_after=Pt(12)
 
-    # Question card
     section_title('السؤال',NAVY)
     qtb=d.add_table(rows=1,cols=1); qc=qtb.cell(0,0); shade(qc,PALE); set_cell_text(qc,req.question,False,NAVY,11)
     d.add_paragraph()
@@ -205,13 +224,12 @@ def export_docx(req:Ask):
         section_title('المصادر الرسمية المستخدمة',BLUE)
         for i,cit in enumerate(r['citations'],1):
             p=d.add_paragraph(); p.paragraph_format.space_after=Pt(4)
-            rr=p.add_run(f'{i}. {cit["title"]} — '); rr.bold=True; rr.font.color.rgb=RGBColor.from_string(NAVY); rr.font.size=Pt(10.5)
+            rr=p.add_run(f'{i}. {cit["title"]} — '); rr.bold=True; rr.font.name='Arial'; rr.font.color.rgb=RGBColor.from_string(NAVY); rr.font.size=Pt(10.5); rr._element.rPr.rFonts.set(qn('w:cs'),'Arial')
             _hyperlink(p,'فتح المصدر الرسمي',cit['url']); _rtl_paragraph(p)
 
-    # Footer
     footer=sec.footer.paragraphs[0]; footer.alignment=WD_ALIGN_PARAGRAPH.CENTER
     fr=footer.add_run('الراصد التشريعي  |  تحقق من النص النظامي من مصدره الرسمي قبل الاعتماد النهائي')
-    fr.font.name='Arial'; fr.font.size=Pt(8); fr.font.color.rgb=RGBColor.from_string(GRAY)
+    fr.font.name='Arial'; fr.font.size=Pt(8); fr.font.color.rgb=RGBColor.from_string(GRAY); fr._element.rPr.rFonts.set(qn('w:cs'),'Arial')
     fpPr=footer._p.get_or_add_pPr(); bidi=OxmlElement('w:bidi'); bidi.set(qn('w:val'),'1'); fpPr.append(bidi)
 
     b=io.BytesIO(); d.save(b); b.seek(0)
@@ -223,6 +241,20 @@ def home():
     return """<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الراصد التشريعي</title>
 <style>:root{--g:#07A869;--b:#3D7EB9;--t:#0DA9A6;--n:#15445A;--gold:#C1B489;--line:#dce8e5}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial;color:var(--n);background:#fff}.hero{padding:42px 20px 70px;background:linear-gradient(135deg,#fff,#f3faf8);position:relative;overflow:hidden}.hero:before{content:"";position:absolute;width:520px;height:190px;border-radius:50%;background:linear-gradient(90deg,#07a86922,#3d7eb922);top:-130px;right:-70px}.inner,.shell{max-width:1100px;margin:auto}.brand{display:flex;gap:15px;align-items:center}.logo{width:58px;height:58px;border-radius:18px;background:linear-gradient(145deg,var(--g),var(--t));color:#fff;display:grid;place-items:center;font-size:28px;font-weight:bold}h1{margin:0;font-size:38px}.tag{color:var(--g);font-weight:bold;margin-top:6px;font-size:18px}.intro{margin-top:18px;color:#536c72;font-size:17px}.shell{margin-top:-35px;padding:0 18px 40px;position:relative}.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 14px 38px #15445a12;margin-bottom:18px}textarea{width:100%;min-height:115px;border:1px solid #cadbd6;border-radius:15px;padding:16px;font:inherit;line-height:1.8;outline:none}textarea:focus{border-color:var(--g);box-shadow:0 0 0 4px #07a86914}.grid{display:grid;grid-template-columns:1fr 240px;gap:14px;align-items:end;margin-top:15px}.drop{position:relative}.dropbtn{width:100%;background:#fff;border:1px solid #cadbd6;color:var(--n);border-radius:13px;padding:13px;font:inherit;text-align:right}.menu{display:none;position:absolute;right:0;left:0;top:52px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;max-height:320px;overflow:auto;z-index:9;box-shadow:0 15px 35px #15445a25}.menu.open{display:block}.menu label{display:block;padding:9px;border-radius:8px;font-size:14px}.menu label:hover{background:#f0f8f5}.menu input{accent-color:var(--g)}button{cursor:pointer}.go{border:0;border-radius:13px;padding:14px;background:linear-gradient(135deg,var(--g),#079e75);color:#fff;font-weight:bold;font-size:16px}.go:disabled{opacity:.55}.result{line-height:2;white-space:pre-wrap}.citebox{margin-top:20px;padding:15px;background:#f5f8f9;border-right:4px solid var(--gold);border-radius:10px}.citebox a{color:var(--b);font-weight:bold;text-decoration:none;display:block;margin:5px 0}.actions{display:none;gap:8px;margin-top:16px}.actions button{border:1px solid #d6e5ef;background:#eef5fa;color:var(--b);border-radius:10px;padding:10px 14px;font-weight:bold}.status{margin-top:12px;color:#60777d}@media(max-width:700px){.grid{grid-template-columns:1fr}h1{font-size:30px}}</style></head>
 <body><header class="hero"><div class="inner"><div class="brand"><div class="logo">ر</div><div><h1>الراصد التشريعي</h1><div class="tag">دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية</div></div></div><div class="intro">اسأل عن نظام أو لائحة أو مادة تنظيمية، واستعرض ما تغيّر، وتحقّق من المصدر الرسمي.</div></div></header>
-<main class="shell"><section class="card"><b>ماذا تريد أن تعرف؟</b><textarea id="q" placeholder="مثال: ما المواد التي تم تعديلها في اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية؟"></textarea><div class="grid"><div class="drop"><b>مصادر البحث</b><button class="dropbtn" onclick="menu.classList.toggle('open')"><span id="lbl">جميع المصادر الرسمية</span> ▾</button><div id="menu" class="menu"><label><input id="all" type="checkbox" checked onchange="allchg()"> جميع المصادر الرسمية</label>"""+opts+"""</div></div><button id="go" class="go" onclick="run()">بحث وتحليل</button></div><div id="st" class="status"></div></section>
-<section class="card"><b>نتائج الراصد</b><div id="out" class="result">اكتب سؤالك، وحدد المصادر التي تريد البحث فيها، ثم اضغط «بحث وتحليل».</div><div id="acts" class="actions"><button onclick="exp('xlsx')">تصدير Excel</button><button onclick="exp('docx')">تصدير Word</button></div></section></main>
-<script>function renderMd(t){let e=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));let x=e(t);x=x.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h2>$1</h2>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');let lines=x.split('\n'),o=[],tbl=[];function flush(){if(tbl.length){let rows=tbl.map(z=>z.split('|').filter(Boolean).map(v=>v.trim()));if(rows.length>1&&rows[1].every(v=>/^[-: ]+$/.test(v)))rows.splice(1,1);o.push('<div style=\"overflow:auto\"><table style=\"width:100%;border-collapse:collapse;margin:12px 0\">'+rows.map((r,i)=>'<tr>'+r.map(v=>'<'+(i?'td':'th')+' style=\"border:1px solid #dce8e5;padding:9px;text-align:right;vertical-align:top\">'+v+'</'+(i?'td':'th')+'>').join('')+'</tr>').join('')+'</table></div>');tbl=[]}}for(let l of lines){if(/^\s*\|.*\|\s*$/.test(l)){tbl.push(l);continue}flush();if(l.trim())o.push('<div>'+l+'</div>')}flush();return o.join('')}const menu=document.getElementById('menu');let last=null;document.addEventListener('click',e=>{if(!e.target.closest('.drop'))menu.classList.remove('open')});document.querySelectorAll('input[name=src]').forEach(x=>x.onchange=()=>{if(x.checked)all.checked=false;upd()});function allchg(){if(all.checked)document.querySelectorAll('input[name=src]').forEach(x=>x.checked=false);upd()}function upd(){let s=[...document.querySelectorAll('input[name=src]:checked')];if(!s.length){all.checked=true;lbl.textContent='جميع المصادر الرسمية'}else lbl.textContent=s.length==1?s[0].parentElement.innerText.trim():s.length+' مصادر محددة'}function payload(){let s=[...document.querySelectorAll('input[name=src]:checked')].map(x=>x.value);return {question:q.value.trim(),sources:all.checked||!s.length?['all']:s}}async function run(){let p=payload();if(!p.question)return;last=p;go.disabled=true;st.textContent='الذكاء الاصطناعي يبحث الآن في المصادر الرسمية ويحلل النتائج…';acts.style.display='none';try{let r=await fetch('/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(p)}),d=await r.json();if(!r.ok)throw Error(d.detail||'تعذر البحث');out.innerHTML=renderMd(d.answer);let box=document.createElement('div');box.className='citebox';box.innerHTML='<b>المصادر الرسمية المستخدمة:</b>';(d.citations||[]).forEach((c,i)=>{let a=document.createElement('a');a.href=c.url;a.target='_blank';a.rel='noopener';a.textContent=(i+1)+'. '+c.title;box.appendChild(a)});out.appendChild(box);acts.style.display='flex'}catch(e){out.textContent='تعذر تنفيذ البحث: '+e.message}finally{go.disabled=false;st.textContent=''}}async function exp(x){if(!last)return;let r=await fetch('/export/'+x,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(last)});if(!r.ok)return;let b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='نتائج_الراصد.'+x;a.click();URL.revokeObjectURL(u)}</script></body></html>"""
+<main class="shell"><section class="card"><b>ماذا تريد أن تعرف؟</b><textarea id="q" placeholder="مثال: ما المواد التي تم تعديلها في اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية؟"></textarea><div class="grid"><div class="drop"><b>مصادر البحث</b><button class="dropbtn" id="dropbtn"><span id="lbl">جميع المصادر الرسمية</span> ▾</button><div id="menu" class="menu"><label><input id="all" type="checkbox" checked > جميع المصادر الرسمية</label>"""+opts+"""</div></div><button id="go" class="go" type="button">بحث وتحليل</button></div><div id="st" class="status"></div></section>
+<section class="card"><b>نتائج الراصد</b><div id="out" class="result">اكتب سؤالك، وحدد المصادر التي تريد البحث فيها، ثم اضغط «بحث وتحليل».</div><div id="acts" class="actions"><button id="xlsxBtn" type="button">تصدير Excel</button><button id="docxBtn" type="button">تصدير Word</button></div></section></main>
+<script>
+const $=id=>document.getElementById(id);
+const menu=$('menu'), all=$('all'), lbl=$('lbl'), q=$('q'), go=$('go'), st=$('st'), out=$('out'), acts=$('acts');
+let last=null, lastResult=null;
+function renderMd(t){let e=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));let x=e(t||'');x=x.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h2>$1</h2>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');let lines=x.split('\\n'),o=[],tbl=[];function flush(){if(tbl.length){let rows=tbl.map(z=>z.split('|').filter(Boolean).map(v=>v.trim()));if(rows.length>1&&rows[1].every(v=>/^[-: ]+$/.test(v)))rows.splice(1,1);o.push('<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;margin:12px 0">'+rows.map((r,i)=>'<tr>'+r.map(v=>'<'+(i?'td':'th')+' style="border:1px solid #dce8e5;padding:9px;text-align:right;vertical-align:top">'+v+'</'+(i?'td':'th')+'>').join('')+'</tr>').join('')+'</table></div>');tbl=[]}}for(let l of lines){if(/^\s*\|.*\|\s*$/.test(l)){tbl.push(l);continue}flush();if(l.trim())o.push('<div>'+l+'</div>')}flush();return o.join('')}
+$('dropbtn').addEventListener('click',()=>menu.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!e.target.closest('.drop'))menu.classList.remove('open')});
+document.querySelectorAll('input[name=src]').forEach(x=>x.addEventListener('change',()=>{if(x.checked)all.checked=false;upd()}));
+all.addEventListener('change',()=>{if(all.checked)document.querySelectorAll('input[name=src]').forEach(x=>x.checked=false);upd()});
+function upd(){let s=[...document.querySelectorAll('input[name=src]:checked')];if(!s.length){all.checked=true;lbl.textContent='جميع المصادر الرسمية'}else lbl.textContent=s.length==1?s[0].parentElement.innerText.trim():s.length+' مصادر محددة'}
+function payload(){let s=[...document.querySelectorAll('input[name=src]:checked')].map(x=>x.value);return {question:q.value.trim(),sources:all.checked||!s.length?['all']:s}}
+async function runSearch(){let p=payload();if(!p.question){st.textContent='اكتب سؤالك أولًا.';q.focus();return}last=p;lastResult=null;go.disabled=true;go.textContent='جارٍ البحث…';st.textContent='الذكاء الاصطناعي يبحث الآن في المصادر الرسمية ويحلل النتائج…';acts.style.display='none';try{let r=await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});let d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر البحث');lastResult=d;out.innerHTML=renderMd(d.answer);let box=document.createElement('div');box.className='citebox';box.innerHTML='<b>المصادر الرسمية المستخدمة:</b>';(d.citations||[]).forEach((c,i)=>{let a=document.createElement('a');a.href=c.url;a.target='_blank';a.rel='noopener';a.textContent=(i+1)+'. '+c.title;box.appendChild(a)});out.appendChild(box);acts.style.display='flex';st.textContent=''}catch(e){out.textContent='تعذر تنفيذ البحث: '+e.message;st.textContent=''}finally{go.disabled=false;go.textContent='بحث وتحليل'}}
+async function exp(ext){if(!last||!lastResult)return;let body={...last,answer:lastResult.answer,citations:lastResult.citations||[],source_names:lastResult.sources||[]};let r=await fetch('/export/'+ext,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('تعذر إنشاء ملف التصدير');return}let b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='نتائج_الراصد.'+ext;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+go.addEventListener('click',runSearch);$('xlsxBtn').addEventListener('click',()=>exp('xlsx'));$('docxBtn').addEventListener('click',()=>exp('docx'));
+</script></body></html>"""
