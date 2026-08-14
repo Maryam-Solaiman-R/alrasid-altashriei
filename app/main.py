@@ -1,8 +1,7 @@
-import os, html, io, re
+import os, html, io, re, time
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from openai import OpenAI
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -12,6 +11,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.section import WD_SECTION
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from app.search_engine import discover
 
 app=FastAPI(title="الراصد التشريعي")
 
@@ -41,44 +41,69 @@ def selected(ids):
     if not ids or "all" in ids: return SOURCES
     wanted=set(ids); return [s for s in SOURCES if s[0] in wanted]
 
-def citations(resp):
-    out=[]
-    try:
-        d=resp.model_dump()
-        for item in d.get("output",[]):
-            if item.get("type")=="message":
-                for c in item.get("content",[]):
-                    for a in c.get("annotations",[]):
-                        if a.get("type")=="url_citation":
-                            u=a.get("url"); t=a.get("title") or "المصدر الرسمي"
-                            if u and not any(x["url"]==u for x in out): out.append({"title":t,"url":u})
-    except Exception: pass
-    return out
+_CACHE={}
 
-def ask_ai(req):
-    if not os.getenv("OPENAI_API_KEY"): raise RuntimeError("يلزم إضافة OPENAI_API_KEY في Render.")
-    ss=selected(req.sources)
-    domains=[d for s in ss for d in s[2]]
-    names="، ".join(s[1] for s in ss)
-    prompt=f"""أنت الراصد التشريعي السعودي. أجب عن سؤال المستخدم بعد البحث الفعلي في الويب وقراءة المصادر الرسمية.
-المصادر المختارة: {names}.
-قواعد إلزامية:
-- اعتمد على المصادر الحكومية الرسمية التي يسمح بها البحث فقط.
-- لا تخمّن رقم مادة أو نصًا أو قرارًا أو تاريخًا.
-- أجب مباشرة وبالعربية الفصحى.
-- إذا كان السؤال عن تعديلات، استخرج المواد التي أمكن التحقق منها، وبيّن السابق والحالي والفرق وقرار/تاريخ التعديل متى توفر.
-- إذا كان السؤال عن حالة عملية، رشّح المواد ذات الصلة واشرح سبب الصلة.
-- استخدم جدولًا نصيًا واضحًا عندما تكون المقارنة أو تعدد المواد أفضل في جدول.
-- إذا تعذر التحقق، قل تحديدًا ما الذي لم يمكن التحقق منه.
-سؤال المستخدم: {req.question}"""
-    tool={"type":"web_search","search_context_size":"high","filters":{"allowed_domains":domains}}
-    client=OpenAI()
-    resp=client.responses.create(model=os.getenv("OPENAI_MODEL","gpt-5.6"),tools=[tool],input=prompt)
-    return {"answer":resp.output_text,"citations":citations(resp),"sources":[s[1] for s in ss]}
+def _keywords(q):
+    stop={'ما','هي','هو','في','من','على','عن','إلى','الى','تم','التي','الذي','هل','وما','بعد','قبل','مع','هذه','هذا'}
+    return [x for x in re.findall(r'[\u0600-\u06FF\d]{2,}',q) if x not in stop][:12]
 
-@app.post("/analyze")
-def analyze(req:Ask):
-    try: return ask_ai(req)
+def _score(item, words):
+    txt=(item.get('title','')+' '+item.get('snippet','')).lower()
+    return sum(3 if w in item.get('title','').lower() else 1 for w in words if w.lower() in txt)
+
+def _extract_facts(text):
+    text=re.sub(r'\s+',' ',text or '')
+    arts=[]
+    for m in re.finditer(r'(?:المادة|مادة)\s*(?:رقم\s*)?[\(（]?([0-9٠-٩]{1,4})[\)）]?',text):
+        v=m.group(1)
+        if v not in arts: arts.append(v)
+    decisions=[]
+    for m in re.finditer(r'(?:قرار[^،.]{0,45}?رقم|بالقرار[^،.]{0,30}?رقم)\s*[\(（]?([0-9٠-٩]{1,6})[\)）]?',text):
+        v=m.group(1)
+        if v not in decisions: decisions.append(v)
+    dates=[]
+    for pat in [r'\b[0-9٠-٩]{1,2}/[0-9٠-٩]{1,2}/[0-9٠-٩]{2,4}\s*هـ?',r'\b[0-9٠-٩]{1,2}/[0-9٠-٩]{1,2}/[0-9٠-٩]{4}\s*م?']:
+        for m in re.finditer(pat,text):
+            v=m.group(0)
+            if v not in dates: dates.append(v)
+    return arts[:20],decisions[:10],dates[:10]
+
+async def _free_search(req):
+    ss=selected(req.sources); domains=[d for x in ss for d in x[2]]
+    key=(req.question,tuple(domains)); now=time.time()
+    if key in _CACHE and now-_CACHE[key][0] < 1800:
+        return _CACHE[key][1]
+    # Free public discovery: no OpenAI API call.
+    results=await discover(req.question,domains,limit=10)
+    words=_keywords(req.question)
+    results=sorted(results,key=lambda x:_score(x,words),reverse=True)
+    citations=[]; alltext=''
+    for x in results:
+        if not x.get('url'): continue
+        citations.append({'title':x.get('title') or 'مصدر رسمي','url':x['url']})
+        alltext+=' '+x.get('title','')+' '+x.get('snippet','')
+    arts,decs,dates=_extract_facts(alltext)
+    lines=['## نتيجة البحث الاقتصادي','تم البحث في المواقع الحكومية المختارة دون استخدام الذكاء الاصطناعي المدفوع. تعرض النتيجة ما أمكن استخراجه مباشرة من عناوين وملخصات المصادر الرسمية.']
+    if arts: lines += ['', '**أرقام المواد التي ظهرت في النتائج:** '+ '، '.join(arts)]
+    if decs: lines += ['**أرقام القرارات التي ظهرت:** '+ '، '.join(decs)]
+    if dates: lines += ['**التواريخ التي ظهرت:** '+ '، '.join(dates)]
+    if results:
+        lines += ['', '## أبرز النتائج الرسمية']
+        for i,x in enumerate(results[:8],1):
+            sn=re.sub(r'\s+',' ',x.get('snippet','')).strip()
+            if len(sn)>420: sn=sn[:417]+'...'
+            lines.append(f'**{i}. {x.get("title") or "مصدر رسمي"}**')
+            if sn: lines.append(sn)
+        lines += ['', '### تنبيه', 'هذه النسخة الاقتصادية لا تستنتج فروق النصوص تلقائيًا مثل النسخة الذكية. عند الحاجة إلى حكم نظامي دقيق، افتح المصدر الرسمي وتحقق من النص الكامل والنسخة السارية.']
+    else:
+        lines += ['', 'لم أعثر على نتيجة رسمية واضحة بهذا الاستعلام. جرّب كتابة اسم النظام أو اللائحة ورقم المادة أو القرار بصورة أكثر تحديدًا.']
+    data={'answer':'\n'.join(lines),'citations':citations,'sources':[x[1] for x in ss], 'mode':'free'}
+    _CACHE[key]=(now,data)
+    return data
+
+@app.post('/analyze')
+async def analyze(req:Ask):
+    try: return await _free_search(req)
     except Exception as e: raise HTTPException(500,str(e))
 
 def _rtl_paragraph(p):
@@ -254,7 +279,7 @@ document.querySelectorAll('input[name=src]').forEach(x=>x.addEventListener('chan
 all.addEventListener('change',()=>{if(all.checked)document.querySelectorAll('input[name=src]').forEach(x=>x.checked=false);upd()});
 function upd(){let s=[...document.querySelectorAll('input[name=src]:checked')];if(!s.length){all.checked=true;lbl.textContent='جميع المصادر الرسمية'}else lbl.textContent=s.length==1?s[0].parentElement.innerText.trim():s.length+' مصادر محددة'}
 function payload(){let s=[...document.querySelectorAll('input[name=src]:checked')].map(x=>x.value);return {question:q.value.trim(),sources:all.checked||!s.length?['all']:s}}
-async function runSearch(){let p=payload();if(!p.question){st.textContent='اكتب سؤالك أولًا.';q.focus();return}last=p;lastResult=null;go.disabled=true;go.textContent='جارٍ البحث…';st.textContent='الذكاء الاصطناعي يبحث الآن في المصادر الرسمية ويحلل النتائج…';acts.style.display='none';try{let r=await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});let d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر البحث');lastResult=d;out.innerHTML=renderMd(d.answer);let box=document.createElement('div');box.className='citebox';box.innerHTML='<b>المصادر الرسمية المستخدمة:</b>';(d.citations||[]).forEach((c,i)=>{let a=document.createElement('a');a.href=c.url;a.target='_blank';a.rel='noopener';a.textContent=(i+1)+'. '+c.title;box.appendChild(a)});out.appendChild(box);acts.style.display='flex';st.textContent=''}catch(e){out.textContent='تعذر تنفيذ البحث: '+e.message;st.textContent=''}finally{go.disabled=false;go.textContent='بحث وتحليل'}}
+async function runSearch(){let p=payload();if(!p.question){st.textContent='اكتب سؤالك أولًا.';q.focus();return}last=p;lastResult=null;go.disabled=true;go.textContent='جارٍ البحث…';st.textContent='بحث اقتصادي مجاني في المصادر الرسمية… لا يتم استهلاك رصيد OpenAI.';acts.style.display='none';try{let r=await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});let d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر البحث');lastResult=d;out.innerHTML=renderMd(d.answer);let box=document.createElement('div');box.className='citebox';box.innerHTML='<b>المصادر الرسمية المستخدمة:</b>';(d.citations||[]).forEach((c,i)=>{let a=document.createElement('a');a.href=c.url;a.target='_blank';a.rel='noopener';a.textContent=(i+1)+'. '+c.title;box.appendChild(a)});out.appendChild(box);acts.style.display='flex';st.textContent=''}catch(e){out.textContent='تعذر تنفيذ البحث: '+e.message;st.textContent=''}finally{go.disabled=false;go.textContent='بحث وتحليل'}}
 async function exp(ext){if(!last||!lastResult)return;let body={...last,answer:lastResult.answer,citations:lastResult.citations||[],source_names:lastResult.sources||[]};let r=await fetch('/export/'+ext,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('تعذر إنشاء ملف التصدير');return}let b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='نتائج_الراصد.'+ext;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 go.addEventListener('click',runSearch);$('xlsxBtn').addEventListener('click',()=>exp('xlsx'));$('docxBtn').addEventListener('click',()=>exp('docx'));
 </script></body></html>"""
