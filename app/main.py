@@ -48,7 +48,7 @@ def _keywords(q):
     return [x for x in re.findall(r'[\u0600-\u06FF\d]{2,}',q) if x not in stop][:12]
 
 def _score(item, words):
-    txt=(item.get('title','')+' '+item.get('snippet','')).lower()
+    txt=(item.get('title','')+' '+item.get('snippet','')+' '+item.get('content','')).lower()
     return sum(3 if w in item.get('title','').lower() else 1 for w in words if w.lower() in txt)
 
 def _extract_facts(text):
@@ -81,22 +81,28 @@ async def _free_search(req):
     for x in results:
         if not x.get('url'): continue
         citations.append({'title':x.get('title') or 'مصدر رسمي','url':x['url']})
-        alltext+=' '+x.get('title','')+' '+x.get('snippet','')
+        alltext+=' '+x.get('title','')+' '+x.get('snippet','')+' '+x.get('content','')
     arts,decs,dates=_extract_facts(alltext)
-    lines=['## نتيجة البحث الاقتصادي','تم البحث في المواقع الحكومية المختارة دون استخدام الذكاء الاصطناعي المدفوع. تعرض النتيجة ما أمكن استخراجه مباشرة من عناوين وملخصات المصادر الرسمية.']
+    lines=['## نتائج الراصد','تم البحث في المصادر الرسمية المحددة وتحليل النتائج المتاحة وفقًا لاستعلامك.']
     if arts: lines += ['', '**أرقام المواد التي ظهرت في النتائج:** '+ '، '.join(arts)]
     if decs: lines += ['**أرقام القرارات التي ظهرت:** '+ '، '.join(decs)]
     if dates: lines += ['**التواريخ التي ظهرت:** '+ '، '.join(dates)]
     if results:
         lines += ['', '## أبرز النتائج الرسمية']
         for i,x in enumerate(results[:8],1):
-            sn=re.sub(r'\s+',' ',x.get('snippet','')).strip()
-            if len(sn)>420: sn=sn[:417]+'...'
+            content=re.sub(r'\s+',' ',x.get('content','') or x.get('snippet','')).strip()
+            # Show the most relevant passage from the actual official document/page.
+            sn=content[:520]
+            for w in words:
+                pos=content.find(w)
+                if pos>=0:
+                    sn=content[max(0,pos-160):pos+500]; break
+            if len(sn)>700: sn=sn[:697]+'...'
             lines.append(f'**{i}. {x.get("title") or "مصدر رسمي"}**')
+            if x.get('document_type'): lines.append(f'نوع المصدر: {x.get("document_type")}')
             if sn: lines.append(sn)
-        lines += ['', '### تنبيه', 'هذه النسخة الاقتصادية لا تستنتج فروق النصوص تلقائيًا مثل النسخة الذكية. عند الحاجة إلى حكم نظامي دقيق، افتح المصدر الرسمي وتحقق من النص الكامل والنسخة السارية.']
     else:
-        lines += ['', 'لم أعثر على نتيجة رسمية واضحة بهذا الاستعلام. جرّب كتابة اسم النظام أو اللائحة ورقم المادة أو القرار بصورة أكثر تحديدًا.']
+        lines += ['', 'لم يتم العثور على نتيجة رسمية مطابقة للاستعلام. جرّب كتابة اسم النظام أو اللائحة أو رقم المادة أو القرار بصورة أكثر تحديدًا.']
     data={'answer':'\n'.join(lines),'citations':citations,'sources':[x[1] for x in ss], 'mode':'free'}
     _CACHE[key]=(now,data)
     return data
@@ -107,14 +113,29 @@ async def analyze(req:Ask):
     except Exception as e: raise HTTPException(500,str(e))
 
 def _rtl_paragraph(p):
+    # True Word RTL: paragraph bidi + complex-script RTL on every run.
     p.alignment=WD_ALIGN_PARAGRAPH.RIGHT
-    pPr=p._p.get_or_add_pPr(); bidi=OxmlElement('w:bidi'); bidi.set(qn('w:val'),'1'); pPr.append(bidi)
+    pPr=p._p.get_or_add_pPr()
+    bidi=pPr.find(qn('w:bidi'))
+    if bidi is None:
+        bidi=OxmlElement('w:bidi'); pPr.append(bidi)
+    bidi.set(qn('w:val'),'1')
     for run in p.runs:
         run.font.name='Arial'; run.font.size=Pt(11)
-        rPr=run._r.get_or_add_rPr(); rfonts=rPr.rFonts
+        rPr=run._r.get_or_add_rPr()
+        rfonts=rPr.rFonts
         if rfonts is None:
             rfonts=OxmlElement('w:rFonts'); rPr.insert(0,rfonts)
-        rfonts.set(qn('w:ascii'),'Arial'); rfonts.set(qn('w:hAnsi'),'Arial'); rfonts.set(qn('w:cs'),'Arial')
+        for attr in ('ascii','hAnsi','eastAsia','cs'):
+            rfonts.set(qn('w:'+attr),'Arial')
+        rtl=rPr.find(qn('w:rtl'))
+        if rtl is None:
+            rtl=OxmlElement('w:rtl'); rPr.append(rtl)
+        rtl.set(qn('w:val'),'1')
+        cs=rPr.find(qn('w:cs'))
+        if cs is None:
+            cs=OxmlElement('w:cs'); rPr.append(cs)
+        cs.set(qn('w:val'),'1')
 
 def _hyperlink(paragraph, text, url):
     part=paragraph.part; rid=part.relate_to(url,'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',is_external=True)
@@ -183,8 +204,15 @@ def export_docx(req:ExportReq):
         _rtl_paragraph(p); cell_margins(cell)
         tcPr=cell._tc.get_or_add_tcPr(); bidi=OxmlElement('w:bidiVisual'); bidi.set(qn('w:val'),'1'); tcPr.append(bidi)
 
+    def rtl_table(table):
+        tblPr=table._tbl.tblPr
+        bidi=tblPr.find(qn('w:bidiVisual'))
+        if bidi is None:
+            bidi=OxmlElement('w:bidiVisual'); tblPr.append(bidi)
+        bidi.set(qn('w:val'),'1')
+
     def section_title(text, color=GREEN):
-        t=d.add_table(rows=1, cols=1)
+        t=d.add_table(rows=1, cols=1); rtl_table(t)
         c=t.cell(0,0); shade(c,color); set_cell_text(c,text,True,WHITE,12.5)
         p=d.add_paragraph(); p.paragraph_format.space_after=Pt(1)
 
@@ -208,7 +236,7 @@ def export_docx(req:ExportReq):
                 if len(rows)>1 and all(re.fullmatch(r'[-: ]+',x or '-') for x in rows[1]): rows.pop(1)
                 if rows:
                     cols=max(len(x) for x in rows)
-                    tb=d.add_table(rows=len(rows),cols=cols); tb.style='Table Grid'; tb.autofit=True
+                    tb=d.add_table(rows=len(rows),cols=cols); rtl_table(tb); tb.style='Table Grid'; tb.autofit=True
                     for ri,row in enumerate(rows):
                         for ci in range(cols):
                             val=_clean_md(row[ci] if ci<len(row) else '')
@@ -227,11 +255,12 @@ def export_docx(req:ExportReq):
     styles=d.styles
     styles['Normal'].font.name='Arial'; styles['Normal'].font.size=Pt(11)
     styles['Normal']._element.rPr.rFonts.set(qn('w:cs'),'Arial')
+    normal_pPr=styles['Normal']._element.get_or_add_pPr(); nb=OxmlElement('w:bidi'); nb.set(qn('w:val'),'1'); normal_pPr.append(nb)
     settings=d.settings._element
     rtl=OxmlElement('w:themeFontLang'); rtl.set(qn('w:val'),'ar-SA'); settings.append(rtl)
 
     # Ministry-inspired clean header band.
-    hdr=d.add_table(rows=1,cols=2); hdr.autofit=True
+    hdr=d.add_table(rows=1,cols=2); rtl_table(hdr); hdr.autofit=True
     set_cell_text(hdr.cell(0,0),'الراصد التشريعي',True,WHITE,20); shade(hdr.cell(0,0),NAVY)
     set_cell_text(hdr.cell(0,1),'ر',True,WHITE,18); shade(hdr.cell(0,1),GREEN)
     p=d.add_paragraph(); rr=p.add_run('دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية')
@@ -239,7 +268,7 @@ def export_docx(req:ExportReq):
     p.paragraph_format.space_after=Pt(12)
 
     section_title('السؤال',NAVY)
-    qtb=d.add_table(rows=1,cols=1); qc=qtb.cell(0,0); shade(qc,PALE); set_cell_text(qc,req.question,False,NAVY,11)
+    qtb=d.add_table(rows=1,cols=1); rtl_table(qtb); qc=qtb.cell(0,0); shade(qc,PALE); set_cell_text(qc,req.question,False,NAVY,11)
     d.add_paragraph()
 
     section_title('نتيجة البحث والتحليل',GREEN)
@@ -279,7 +308,7 @@ document.querySelectorAll('input[name=src]').forEach(x=>x.addEventListener('chan
 all.addEventListener('change',()=>{if(all.checked)document.querySelectorAll('input[name=src]').forEach(x=>x.checked=false);upd()});
 function upd(){let s=[...document.querySelectorAll('input[name=src]:checked')];if(!s.length){all.checked=true;lbl.textContent='جميع المصادر الرسمية'}else lbl.textContent=s.length==1?s[0].parentElement.innerText.trim():s.length+' مصادر محددة'}
 function payload(){let s=[...document.querySelectorAll('input[name=src]:checked')].map(x=>x.value);return {question:q.value.trim(),sources:all.checked||!s.length?['all']:s}}
-async function runSearch(){let p=payload();if(!p.question){st.textContent='اكتب سؤالك أولًا.';q.focus();return}last=p;lastResult=null;go.disabled=true;go.textContent='جارٍ البحث…';st.textContent='بحث اقتصادي مجاني في المصادر الرسمية… لا يتم استهلاك رصيد OpenAI.';acts.style.display='none';try{let r=await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});let d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر البحث');lastResult=d;out.innerHTML=renderMd(d.answer);let box=document.createElement('div');box.className='citebox';box.innerHTML='<b>المصادر الرسمية المستخدمة:</b>';(d.citations||[]).forEach((c,i)=>{let a=document.createElement('a');a.href=c.url;a.target='_blank';a.rel='noopener';a.textContent=(i+1)+'. '+c.title;box.appendChild(a)});out.appendChild(box);acts.style.display='flex';st.textContent=''}catch(e){out.textContent='تعذر تنفيذ البحث: '+e.message;st.textContent=''}finally{go.disabled=false;go.textContent='بحث وتحليل'}}
+async function runSearch(){let p=payload();if(!p.question){st.textContent='اكتب سؤالك أولًا.';q.focus();return}last=p;lastResult=null;go.disabled=true;go.textContent='جارٍ البحث…';st.textContent='جارٍ البحث في المصادر الرسمية وتحليل النتائج…';acts.style.display='none';try{let r=await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});let d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر البحث');lastResult=d;out.innerHTML=renderMd(d.answer);let box=document.createElement('div');box.className='citebox';box.innerHTML='<b>المصادر الرسمية المستخدمة:</b>';(d.citations||[]).forEach((c,i)=>{let a=document.createElement('a');a.href=c.url;a.target='_blank';a.rel='noopener';a.textContent=(i+1)+'. '+c.title;box.appendChild(a)});out.appendChild(box);acts.style.display='flex';st.textContent=''}catch(e){out.textContent='تعذر تنفيذ البحث: '+e.message;st.textContent=''}finally{go.disabled=false;go.textContent='بحث وتحليل'}}
 async function exp(ext){if(!last||!lastResult)return;let body={...last,answer:lastResult.answer,citations:lastResult.citations||[],source_names:lastResult.sources||[]};let r=await fetch('/export/'+ext,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('تعذر إنشاء ملف التصدير');return}let b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='نتائج_الراصد.'+ext;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 go.addEventListener('click',runSearch);$('xlsxBtn').addEventListener('click',()=>exp('xlsx'));$('docxBtn').addEventListener('click',()=>exp('docx'));
 </script></body></html>"""
