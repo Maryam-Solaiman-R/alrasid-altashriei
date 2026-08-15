@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.section import WD_SECTION
 from docx.oxml import OxmlElement
@@ -93,7 +93,7 @@ async def _free_search(req):
             content=re.sub(r'\s+',' ',x.get('content','') or x.get('snippet','')).strip()
             # Presentation-only cleanup: suppress web-template / JavaScript fragments.
             content=re.sub(r'\{\{.*?\}\}|function\s*\([^)]*\)\s*\{.*?\}|toLocaleTimeString\([^)]*\)|limitBodyText\([^)]*\)', ' ', content, flags=re.I)
-            content=re.sub(r'\b(?:Facebook|WhatsApp|Read more|Scroll)\b', ' ', content, flags=re.I)
+            content=re.sub(r'\b(?:Facebook|WhatsApp|Read more|Scroll|Title)\s*:?', ' ', content, flags=re.I)
             content=re.sub(r'\s+',' ',content).strip(' -–—|')
             sn=content[:420]
             for w in words:
@@ -277,9 +277,12 @@ def export_docx(req:ExportReq):
     rtl=OxmlElement('w:themeFontLang'); rtl.set(qn('w:val'),'ar-SA'); settings.append(rtl)
 
     # Ministry-inspired clean header band.
-    hdr=d.add_table(rows=1,cols=2); rtl_table(hdr); hdr.autofit=True
-    set_cell_text(hdr.cell(0,0),'الراصد التشريعي',True,NAVY,20); shade(hdr.cell(0,0),'FFFFFF')
-    set_cell_text(hdr.cell(0,1),'ر',True,WHITE,18); shade(hdr.cell(0,1),GREEN)
+    hdr=d.add_table(rows=1,cols=2); rtl_table(hdr); hdr.autofit=False
+    hdr.columns[0].width=Inches(0.75); hdr.columns[1].width=Inches(5.9)
+    for c in hdr.columns[0].cells: c.width=Inches(0.75)
+    for c in hdr.columns[1].cells: c.width=Inches(5.9)
+    set_cell_text(hdr.cell(0,0),'ر',True,WHITE,18); shade(hdr.cell(0,0),GREEN)
+    set_cell_text(hdr.cell(0,1),'الراصد التشريعي',True,NAVY,20); shade(hdr.cell(0,1),'FFFFFF')
     p=d.add_paragraph(); rr=p.add_run('دليلك إلى تحديثات الأنظمة واللوائح الحكومية السعودية')
     rr.bold=True; rr.font.name='Arial'; rr.font.size=Pt(11.5); rr.font.color.rgb=RGBColor.from_string(GREEN); rr._element.rPr.rFonts.set(qn('w:cs'),'Arial'); _rtl_paragraph(p)
     p.paragraph_format.space_after=Pt(12)
@@ -289,7 +292,8 @@ def export_docx(req:ExportReq):
     d.add_paragraph()
 
     section_title('نتيجة البحث والتحليل',GREEN)
-    add_md_content(r['answer'])
+    word_answer=re.sub(r'^##\s*نتائج الراصد\s*', '', r['answer'] or '', count=1).lstrip()
+    add_md_content(word_answer)
 
     if r.get('citations'):
         section_title('المصادر الرسمية المستخدمة',BLUE)
